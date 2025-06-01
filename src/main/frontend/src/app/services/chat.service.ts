@@ -39,7 +39,7 @@ export class ChatService {
     }
 
     sendMessage(sessionId: string, content: string, language: string): Observable<ChatMessageChunk> {
-        const source = new EventSource(`${this.apiUrl}/chat/sessions/${sessionId}/messages?&message=${encodeURIComponent(content)}&language=${encodeURIComponent(language)}`)
+        const source = new EventSource(`${this.apiUrl}/chat/sessions/${sessionId}/messages/new?message=${encodeURIComponent(content)}&language=${encodeURIComponent(language)}`)
         return new Observable(obs => {
             source.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString()) as ChatMessageChunk

@@ -46,7 +46,7 @@ class LanguageLearnerController(
         }
     }
 
-    @GetMapping("/chat/sessions/{sessionId}/messages", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @GetMapping("/chat/sessions/{sessionId}/messages/new", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun sendMessage(
         @PathVariable("sessionId") sessionId: String,
         @RequestParam("language") language: String,
