@@ -2,12 +2,14 @@ package ch.yanick.ai.ailanguagelearner.controller
 
 import ch.yanick.ai.ailanguagelearner.model.ChatMessage
 import ch.yanick.ai.ailanguagelearner.model.ChatSession
+import ch.yanick.ai.ailanguagelearner.repository.ChatMessageRepository
 import ch.yanick.ai.ailanguagelearner.service.LanguageLearningService
 import ch.yanick.ai.ailanguagelearner.service.TextToSpeechService
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.reactor.asFlux
+import kotlinx.coroutines.runBlocking
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.http.MediaType
 import org.springframework.http.codec.ServerSentEvent
@@ -21,7 +23,8 @@ import java.util.*
 @CrossOrigin(origins = ["*"])
 class LanguageLearnerController(
     private val languageLearningService: LanguageLearningService,
-    private val textToSpeechService: TextToSpeechService
+    private val textToSpeechService: TextToSpeechService,
+    private val chatMessageRepository: ChatMessageRepository
 ) {
     private val mapper = jacksonObjectMapper()
 
@@ -46,16 +49,26 @@ class LanguageLearnerController(
         }
     }
 
+    @GetMapping("/chat/sessions/{sessionId}/messages/nextId")
+    fun saveNewTemporaryMessage(@PathVariable sessionId: String): Mono<Long> {
+        return Mono.fromCallable {
+            runBlocking {
+                chatMessageRepository.save(ChatMessage(0L, sessionId)).id
+            }
+        }
+    }
+
     @GetMapping("/chat/sessions/{sessionId}/messages/new", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun sendMessage(
         @PathVariable("sessionId") sessionId: String,
+        @RequestParam("id") messageId: Long,
         @RequestParam("language") language: String,
         @RequestParam("message") message: String
     ): Flux<ServerSentEvent<String>> {
         return callbackFlow {
             val fullResponse = StringBuilder()
 
-            languageLearningService.processUserMessage(sessionId, message, language) {
+            languageLearningService.processUserMessage(sessionId, messageId, message, language) {
                 if (!it.isEnd) {
                     fullResponse.append(it.content)
                     val isThinking = fullResponse.contains("<think>") && !fullResponse.contains("</think>")

@@ -1,6 +1,6 @@
 import {Injectable} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
-import {Observable, BehaviorSubject} from 'rxjs';
+import {Observable, BehaviorSubject, take, firstValueFrom} from 'rxjs';
 import {
     ChatMessage,
     ChatSession,
@@ -38,8 +38,12 @@ export class ChatService {
         return this.http.get<ChatMessage[]>(`${this.apiUrl}/chat/sessions/${sessionId}/messages`);
     }
 
-    sendMessage(sessionId: string, content: string, language: string): Observable<ChatMessageChunk> {
-        const source = new EventSource(`${this.apiUrl}/chat/sessions/${sessionId}/messages/new?message=${encodeURIComponent(content)}&language=${encodeURIComponent(language)}`)
+    saveNextMessage(sessionId: string): Observable<number> {
+        return this.http.get<number>(`${this.apiUrl}/chat/sessions/${sessionId}/messages/nextId`)
+    }
+
+    sendMessage(msgId: number, sessionId: string, content: string, language: string): Observable<ChatMessageChunk> {
+        const source = new EventSource(`${this.apiUrl}/chat/sessions/${sessionId}/messages/new?id=${encodeURIComponent(msgId)}&message=${encodeURIComponent(content)}&language=${encodeURIComponent(language)}`)
         return new Observable(obs => {
             source.onmessage = (event) => {
                 const data = JSON.parse(event.data.toString()) as ChatMessageChunk
@@ -77,9 +81,8 @@ export class ChatService {
         return aiMessagesByIdDesc.length > 0 ? aiMessagesByIdDesc[0].id : (messagesByIdDesc.length > 0 ? (messagesByIdDesc[0].id + 1) : 0);
     }
 
-    nextMessageId(): number {
-        const msgs = this.messagesSubject.value.sort((m1, m2) => m2.id - m1.id)
-        return msgs.length > 0 ? msgs[0].id + 1 : 0;
+    async nextMessageId(sessionId: string): Promise<number> {
+        return await firstValueFrom(this.saveNextMessage(sessionId))
     }
 
     addMessagePart(message: ChatMessage) {

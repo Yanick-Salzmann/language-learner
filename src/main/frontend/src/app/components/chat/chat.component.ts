@@ -98,9 +98,7 @@ export class ChatComponent implements OnInit {
     ngOnInit(): void {
     }
 
-
-
-    onMessageSent(content: string): void {
+    async onMessageSent(content: string): Promise<void> {
         const currentSession = this.chatService.getCurrentSession();
         if (!currentSession) return;
 
@@ -108,7 +106,7 @@ export class ChatComponent implements OnInit {
 
         // Add user message to chat immediately
         const userMessage: ChatMessage = {
-            id: this.chatService.nextMessageId(),
+            id: await this.chatService.nextMessageId(currentSession.id),
             sessionId: currentSession.id,
             sender: 'USER',
             content: content,
@@ -120,7 +118,7 @@ export class ChatComponent implements OnInit {
         let lastId = this.chatService.getLastAiMessageId()
 
         // Send message to backend
-        this.chatService.sendMessage(currentSession.id, content, currentSession.language).subscribe({
+        this.chatService.sendMessage(userMessage.id, currentSession.id, content, currentSession.language).subscribe({
             next: (aiMessage: ChatMessageChunk) => {
                 lastId = aiMessage.id
                 this.addMessageChunk(currentSession, aiMessage)
@@ -138,6 +136,8 @@ export class ChatComponent implements OnInit {
     }
 
     private addMessageChunk(currentSession: ChatSession, aiMessage: ChatMessageChunk) {
+        console.log("Adding message chunk: ", aiMessage)
+
         this.chatService.addMessagePart({
                 content: aiMessage.content,
                 id: aiMessage.id,

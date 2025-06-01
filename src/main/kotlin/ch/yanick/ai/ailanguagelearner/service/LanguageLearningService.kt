@@ -54,12 +54,14 @@ class LanguageLearningService(
 
     suspend fun processUserMessage(
         sessionId: String,
+        messageId: Long,
         userMessage: String,
         language: String,
         onMessage: suspend (ChatMessageChunk) -> Unit
     ) {
         // Save user message
         var userChatMessage = ChatMessage(
+            id = messageId,
             sessionId = sessionId,
             sender = MessageSender.USER,
             content = userMessage,
@@ -78,7 +80,7 @@ class LanguageLearningService(
                     append("Your role is to help the user learn $language by correcting their mistakes, ")
                     append("providing better alternatives, and guiding them through a structured learning path. ")
                     append("Always respond in $language unless the user explicitly asks for an explanation in English. ")
-                    append("Be encouraging and provide constructive feedback.")
+                    append("Be encouraging and provide constructive feedback. Have a lighthearted tone. Use some emojis, but not excessively")
                 }
             }
             .build()
@@ -90,11 +92,19 @@ class LanguageLearningService(
 
         val aiResponse = service.ask(userMessage)
 
+        val aiChatMessage = ChatMessage(
+            sessionId = sessionId,
+            sender = MessageSender.ASSISTANT,
+            content = "",
+            language = language,
+            timestamp = LocalDateTime.now()
+        )
+
         aiResponse.onPartialResponse {
             runBlocking {
                 onMessage(
                     ChatMessageChunk(
-                        id = userChatMessage.id,
+                        id = aiChatMessage.id,
                         isEnd = false,
                         content = it
                     )
@@ -105,18 +115,11 @@ class LanguageLearningService(
                 chatSessionRepository.save(session.copy(updatedAt = LocalDateTime.now()))
             }
         }.onCompleteResponse {
-            val aiChatMessage = ChatMessage(
-                sessionId = sessionId,
-                sender = MessageSender.ASSISTANT,
-                content = it.aiMessage().text(),
-                language = language,
-                timestamp = LocalDateTime.now()
-            )
-            chatMessageRepository.save(aiChatMessage)
+            chatMessageRepository.save(aiChatMessage.copy(content = it.aiMessage().text()))
             runBlocking {
                 onMessage(
                     ChatMessageChunk(
-                        id = userChatMessage.id,
+                        id = aiChatMessage.id,
                         isEnd = true,
                         content = ""
                     )
@@ -124,11 +127,13 @@ class LanguageLearningService(
             }
         }.onError {
             runBlocking {
-                onMessage(ChatMessageChunk(
-                    id = userChatMessage.id,
-                    isEnd = true,
-                    content = "An error occurred: ${it.message ?: "Unknown error"}"
-                ))
+                onMessage(
+                    ChatMessageChunk(
+                        id = aiChatMessage.id,
+                        isEnd = true,
+                        content = "An error occurred: ${it.message ?: "Unknown error"}"
+                    )
+                )
             }
         }.start()
     }
