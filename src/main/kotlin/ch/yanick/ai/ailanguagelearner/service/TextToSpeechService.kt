@@ -1,5 +1,10 @@
 package ch.yanick.ai.ailanguagelearner.service
 
+import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
+import ch.yanick.ai.ailanguagelearner.utils.calculateSha256AsHexString
+import jakarta.annotation.PostConstruct
+import org.apache.commons.io.IOUtils
+import org.slf4j.LoggerFactory
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.stereotype.Service
@@ -11,109 +16,81 @@ import java.nio.file.Paths
 
 @Service
 class TextToSpeechService {
-    
-    private val pythonScriptPath = "scripts/tts_xtts.py"
-    private val outputDir = "temp/audio"
-    
-    init {
-        // Create output directory if it doesn't exist
-        Files.createDirectories(Paths.get(outputDir))
-        createPythonScript()
+    private val log = LoggerFactory.getLogger(TextToSpeechService::class.java)
+
+    @PostConstruct
+    fun initialize() {
+        this.setupVenv()
     }
-    
+
     fun generateSpeech(text: String, language: String = "en"): Flux<DataBuffer> {
-        return Flux.create { sink ->
-            try {
-                val outputFile = "$outputDir/${System.currentTimeMillis()}.wav"
-                
-                val processBuilder = ProcessBuilder(
-                    "python", pythonScriptPath, 
-                    "--text", text,
-                    "--language", language,
-                    "--output", outputFile
-                )
-                
-                val process = processBuilder.start()
-                val exitCode = process.waitFor()
-                
-                if (exitCode == 0 && Files.exists(Paths.get(outputFile))) {
-                    // Stream the audio file
-                    val audioFile = File(outputFile)
-                    val inputStream = FileInputStream(audioFile)
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        val dataBuffer = DefaultDataBufferFactory().allocateBuffer(bytesRead)
-                        dataBuffer.write(buffer, 0, bytesRead)
-                        sink.next(dataBuffer)
-                    }
-                    
-                    inputStream.close()
-                    // Clean up temporary file
-                    Files.deleteIfExists(Paths.get(outputFile))
-                    sink.complete()
-                } else {
-                    sink.error(RuntimeException("Failed to generate speech"))
-                }
-            } catch (e: Exception) {
-                sink.error(e)
+        return Flux.empty()
+    }
+
+    private fun setupVenv(): File {
+        val userFolder = File(System.getProperty("user.home"))
+        if (!userFolder.exists()) {
+            throw IllegalStateException("User home directory does not exist: $userFolder")
+        }
+
+        val targetFolder = File(userFolder, ".ai-language-learner")
+        if (targetFolder.exists() && File(targetFolder, "pyvenv.cfg").exists()) {
+            checkAndExtractScript(targetFolder)
+            return targetFolder
+        }
+
+        if (!targetFolder.mkdirs()) {
+            throw IllegalStateException("Unable to create directory: $targetFolder")
+        }
+
+        log.info("Creating python venv in folder $targetFolder")
+
+        try {
+            if (ProcessExecutor.executeCommand(targetFolder, "python.exe", "-m", "venv", ".") != 0) {
+                throw IllegalStateException("Failed to initialize python venv in $targetFolder")
+            }
+
+            log.info("Done creating python venv, installing required dependencies next...")
+
+            if (ProcessExecutor.executeCommand(
+                    targetFolder,
+                    "cmd",
+                    "/c",
+                    "\"Scripts\\activate.bat && pip install git+https://github.com/idiap/coqui-ai-TTS\""
+                ) != 0
+            ) {
+                throw IllegalStateException("Failed to install dependencies")
+            }
+
+            checkAndExtractScript(targetFolder)
+        } catch (e: Exception) {
+            // if anything failed, let's just delete everything so that next time it will try again
+            targetFolder.deleteRecursively()
+            throw e
+        }
+
+        return targetFolder
+    }
+
+    private fun checkAndExtractScript(folder: File) {
+        val content = javaClass.getResourceAsStream("/python/xtts.py").use { res ->
+            res ?: throw IllegalStateException("Python script /python/xtts.py not found in application resources")
+            IOUtils.toByteArray(res)
+        }
+
+        val hash = content.calculateSha256AsHexString()
+        val hashFile = File(folder, "xtts.py.sha256")
+        if (hashFile.exists()) {
+            val existingHash = hashFile.readText().trim()
+            if (existingHash == hash) {
+                log.info("Python script xtts.py is already up to date")
+                return
             }
         }
-    }
-    
-    private fun createPythonScript() {
-        val scriptDir = File("scripts")
-        if (!scriptDir.exists()) {
-            scriptDir.mkdirs()
-        }
-        
-        val scriptFile = File(pythonScriptPath)
-        if (!scriptFile.exists()) {
-            scriptFile.writeText("""
-import argparse
-import torch
-from TTS.api import TTS
-import soundfile as sf
-import numpy as np
 
-def main():
-    parser = argparse.ArgumentParser(description='Generate speech using XTTS-v2')
-    parser.add_argument('--text', required=True, help='Text to convert to speech')
-    parser.add_argument('--language', default='en', help='Language code')
-    parser.add_argument('--output', required=True, help='Output WAV file path')
-    
-    args = parser.parse_args()
-    
-    # Initialize XTTS-v2
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    # Use XTTS-v2 model
-    tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False).to(device)
-    
-    # Generate speech
-    wav = tts.tts(text=args.text, 
-                  speaker_wav="voice_samples/default_speaker.wav",  # You might want to add a default speaker
-                  language=args.language)
-    
-    # Save to file
-    sf.write(args.output, np.array(wav), 22050)
-    print(f"Audio saved to {args.output}")
-
-if __name__ == "__main__":
-    main()
-            """.trimIndent())
-        }
-        
-        // Create requirements.txt for Python dependencies
-        val requirementsFile = File("scripts/requirements.txt")
-        if (!requirementsFile.exists()) {
-            requirementsFile.writeText("""
-TTS>=0.22.0
-torch>=2.0.0
-soundfile>=0.12.1
-numpy>=1.21.0
-            """.trimIndent())
-        }
+        log.info("Extracting python script xtts.py to $folder")
+        val scriptFile = File(folder, "xtts.py")
+        scriptFile.writeBytes(content)
+        hashFile.writeText(hash)
     }
 }
