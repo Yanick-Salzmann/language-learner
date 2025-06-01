@@ -12,6 +12,7 @@ import reactor.core.publisher.Flux
 import java.io.File
 import java.math.BigInteger
 import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -20,8 +21,11 @@ class TextToSpeechService {
     private val log = LoggerFactory.getLogger(TextToSpeechService::class.java)
 
     private val acceptorThread = Thread(this::serverThread)
+    private lateinit var pythonThread: Thread
+
     private var acceptorPort: Int = -1
     private lateinit var serverSocket: ServerSocket
+    private var acceptedClient: Socket? = null
 
     private val startupLock = ReentrantLock()
     private val startupVariable = startupLock.newCondition()
@@ -35,6 +39,7 @@ class TextToSpeechService {
         val targetFolder = this.setupVenv()
         this.setupXttsModel(targetFolder)
         this.startXttsServerThread()
+        this.startPythonThread(targetFolder)
     }
 
     @PreDestroy
@@ -42,9 +47,51 @@ class TextToSpeechService {
         isShutdownRequest = true
         if (acceptorThread.isAlive) {
             serverSocket.close()
+            acceptedClient?.close()
             acceptorThread.interrupt()
             acceptorThread.join()
+            log.info("XTTS acceptor server thread shut down gracefully")
         }
+
+        if (pythonThread.isAlive) {
+            pythonThread.interrupt()
+            pythonThread.join()
+            log.info("Python XTTS thread shut down gracefully")
+        }
+    }
+
+    private fun startPythonThread(targetFolder: File) {
+        log.info("Starting Python thread for XTTS...")
+
+        // cannot really check for successful startup here, only wait for the socket to connect
+        pythonThread = Thread {
+            var pythonProc: Process? = null
+            try {
+                pythonProc = ProcessExecutor.executeCommandNoWait(
+                    targetFolder,
+                    "cmd.exe",
+                    "/C",
+                    "Scripts\\activate.bat && python xtts.py $acceptorPort \"${
+                        File(
+                            targetFolder,
+                            "generated.wav"
+                        )
+                    }\" \"${File(targetFolder, "XTTS-v2")}\"",
+                )
+
+                log.info("Python XTTS process started with PID: ${pythonProc.pid()}")
+                pythonProc.waitFor()
+                log.info("Python XTTS process exited with code: ${pythonProc.exitValue()}")
+            } catch (e: Exception) {
+                pythonProc?.destroy()
+                if (!isShutdownRequest) {
+                    log.error("Error starting Python XTTS process", e)
+                } else {
+                    log.info("Python XTTS process interrupted, shutting down gracefully")
+                }
+            }
+        }
+        pythonThread.start()
     }
 
     private fun startXttsServerThread() {
@@ -71,7 +118,6 @@ class TextToSpeechService {
     }
 
     private fun serverThread() {
-
         try {
             serverSocket = ServerSocket(0)
             acceptorPort = serverSocket.localPort
@@ -92,8 +138,10 @@ class TextToSpeechService {
 
         try {
             while (!Thread.currentThread().isInterrupted) {
-                val client = serverSocket.accept()
-                client.inputStream.use {
+                acceptedClient = serverSocket.accept()
+                log.info("XTTS client connected from ${acceptedClient?.inetAddress?.hostAddress}:${acceptedClient?.port}")
+
+                acceptedClient?.inputStream?.use {
                     do {
                         val length = BigInteger(it.readNBytes(4)).toInt()
                         if (length > 0) {
@@ -146,6 +194,8 @@ class TextToSpeechService {
         ) {
             throw IllegalStateException("Failed to clone XTTS model repository")
         }
+
+        checkAndExtractSample(folder)
     }
 
     private fun setupVenv(): File {
@@ -177,6 +227,16 @@ class TextToSpeechService {
                     targetFolder,
                     "cmd",
                     "/c",
+                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\""
+                ) != 0
+            ) {
+                throw IllegalStateException("Failed to install PyTorch dependencies")
+            }
+
+            if (ProcessExecutor.executeCommand(
+                    targetFolder,
+                    "cmd",
+                    "/c",
                     "\"Scripts\\activate.bat && pip install git+https://github.com/idiap/coqui-ai-TTS\""
                 ) != 0
             ) {
@@ -194,10 +254,7 @@ class TextToSpeechService {
     }
 
     private fun checkAndExtractScript(folder: File) {
-        val content = javaClass.getResourceAsStream("/python/xtts.py").use { res ->
-            res ?: throw IllegalStateException("Python script /python/xtts.py not found in application resources")
-            IOUtils.toByteArray(res)
-        }
+        val content = resourceToByteArray("/tts/xtts.py")
 
         val hash = content.calculateSha256AsHexString()
         val hashFile = File(folder, "xtts.py.sha256")
@@ -213,5 +270,30 @@ class TextToSpeechService {
         val scriptFile = File(folder, "xtts.py")
         scriptFile.writeBytes(content)
         hashFile.writeText(hash)
+    }
+
+    private fun checkAndExtractSample(folder: File) {
+        val content = resourceToByteArray("/tts/generated.wav")
+        val sampleFile = File(folder, "generated.wav")
+        val hash = content.calculateSha256AsHexString()
+        val hashFile = File(folder, "generated.wav.sha256")
+
+        if (sampleFile.exists() && hashFile.exists()) {
+            val existingHash = hashFile.readText().trim()
+            if (existingHash == hash) {
+                log.info("Voice sample generated.wav is already up to date")
+                return
+            }
+        }
+
+        log.info("Extracting voice sample generated.wav to $folder")
+        sampleFile.writeBytes(content)
+        hashFile.writeText(hash)
+
+    }
+
+    private fun resourceToByteArray(resourcePath: String): ByteArray {
+        return javaClass.getResourceAsStream(resourcePath)?.use { IOUtils.toByteArray(it) }
+            ?: throw IllegalStateException("Resource not found: $resourcePath")
     }
 }

@@ -1,6 +1,7 @@
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import Xtts
 import sys
+import signal
 from socket import socket, AF_INET, SOCK_STREAM
 import json
 
@@ -31,6 +32,12 @@ def read_next_msg():
         msg.append(bt)
 
     return json.loads(msg.decode('utf-8'))
+
+def signal_handler(sig, frame):
+    comm_socket.shutdown()
+    comm_socket.close()
+
+signal.signal(signal.SIGINT, signal_handler)
 
 while True:
     next_msg = read_next_msg()

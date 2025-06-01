@@ -13,4 +13,13 @@ object ProcessExecutor {
 
         return process.waitFor()
     }
+
+    fun executeCommandNoWait(directory: File, vararg command: String, environment: Map<String, String> = emptyMap()): Process {
+        return ProcessBuilder(*command)
+            .directory(directory)
+            .inheritIO()
+            .also {
+                it.environment().putAll(environment)
+            }.start()
+    }
 }
