@@ -53,15 +53,21 @@ class LanguageLearnerController(
         @RequestParam("message") message: String
     ): Flux<ServerSentEvent<String>> {
         return callbackFlow {
+            val fullResponse = StringBuilder()
+
             languageLearningService.processUserMessage(sessionId, message, language) {
                 if (!it.isEnd) {
-                    trySend(
-                        ServerSentEvent
-                            .builder(mapper.writeValueAsString(it))
-                            .id(UUID.randomUUID().toString())
-                            .event("message")
-                            .build()
-                    )
+                    fullResponse.append(it.content)
+                    val isThinking = fullResponse.contains("<think>") && !fullResponse.contains("</think>")
+                    if (!isThinking) {
+                        trySend(
+                            ServerSentEvent
+                                .builder(mapper.writeValueAsString(it))
+                                .id(UUID.randomUUID().toString())
+                                .event("message")
+                                .build()
+                        )
+                    }
                 } else {
                     trySend(
                         ServerSentEvent

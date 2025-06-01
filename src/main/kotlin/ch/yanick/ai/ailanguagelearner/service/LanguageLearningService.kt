@@ -83,13 +83,11 @@ class LanguageLearningService(
             }
             .build()
 
-        // Build context for the AI
         val userMessage = buildString {
             append("Student: $userMessage\n")
             append("Teacher:")
         }
 
-        // Get AI response
         val aiResponse = service.ask(userMessage)
 
         aiResponse.onPartialResponse {
