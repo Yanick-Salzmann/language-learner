@@ -77,6 +77,11 @@ export class ChatService {
         return aiMessagesByIdDesc.length > 0 ? aiMessagesByIdDesc[0].id : (messagesByIdDesc.length > 0 ? (messagesByIdDesc[0].id + 1) : 0);
     }
 
+    nextMessageId(): number {
+        const msgs = this.messagesSubject.value.sort((m1, m2) => m2.id - m1.id)
+        return msgs.length > 0 ? msgs[0].id + 1 : 0;
+    }
+
     addMessagePart(message: ChatMessage) {
         const id = message.id;
         const sessionId = message.sessionId;

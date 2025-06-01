@@ -98,6 +98,8 @@ export class ChatComponent implements OnInit {
     ngOnInit(): void {
     }
 
+
+
     onMessageSent(content: string): void {
         const currentSession = this.chatService.getCurrentSession();
         if (!currentSession) return;
@@ -106,7 +108,7 @@ export class ChatComponent implements OnInit {
 
         // Add user message to chat immediately
         const userMessage: ChatMessage = {
-            id: Date.now(), // Temporary ID
+            id: this.chatService.nextMessageId(),
             sessionId: currentSession.id,
             sender: 'USER',
             content: content,
