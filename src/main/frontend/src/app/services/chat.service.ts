@@ -106,6 +106,7 @@ export class ChatService {
     addMessage(message: ChatMessage): void {
         const currentMessages = this.messagesSubject.value;
         this.messagesSubject.next([...currentMessages, {...message, content: new BehaviorSubject(message.content)}]);
+        console.log(this.messagesSubject.value)
     }
 
     private loadSessions(): void {

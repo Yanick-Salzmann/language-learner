@@ -92,13 +92,15 @@ class LanguageLearningService(
 
         val aiResponse = service.ask(userMessage)
 
-        val aiChatMessage = ChatMessage(
+        var aiChatMessage = ChatMessage(
             sessionId = sessionId,
             sender = MessageSender.ASSISTANT,
             content = "",
             language = language,
             timestamp = LocalDateTime.now()
         )
+
+        aiChatMessage = chatMessageRepository.save(aiChatMessage)
 
         aiResponse.onPartialResponse {
             runBlocking {

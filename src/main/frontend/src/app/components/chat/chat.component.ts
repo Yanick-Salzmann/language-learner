@@ -46,16 +46,16 @@ import {Observable} from 'rxjs';
         height: 100%;
         display: flex;
         flex-direction: column;
-        
+
         .chat-messages {
           flex-grow: 1;
         }
-        
+
         app-chat-input {
           flex-grow: 0;
         }
       }
-      
+
       .welcome-message {
         display: flex;
         align-items: center;
@@ -100,11 +100,12 @@ export class ChatComponent implements OnInit {
 
     async onMessageSent(content: string): Promise<void> {
         const currentSession = this.chatService.getCurrentSession();
-        if (!currentSession) return;
+        if (!currentSession) {
+            return
+        }
 
         this.isLoading = true;
 
-        // Add user message to chat immediately
         const userMessage: ChatMessage = {
             id: await this.chatService.nextMessageId(currentSession.id),
             sessionId: currentSession.id,
@@ -113,6 +114,7 @@ export class ChatComponent implements OnInit {
             timestamp: new Date().toISOString(),
             language: currentSession.language
         };
+
         this.chatService.addMessage(userMessage)
 
         let lastId = this.chatService.getLastAiMessageId()
