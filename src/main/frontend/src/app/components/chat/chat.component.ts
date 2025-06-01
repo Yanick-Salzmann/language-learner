@@ -101,7 +101,8 @@ export class ChatComponent implements OnInit {
         };
         this.chatService.addMessage(userMessage)
 
-        let lastId = 0
+        let lastId = this.chatService.getLastAiMessageId()
+
         // Send message to backend
         this.chatService.sendMessage(currentSession.id, content, currentSession.language).subscribe({
             next: (aiMessage: ChatMessageChunk) => {

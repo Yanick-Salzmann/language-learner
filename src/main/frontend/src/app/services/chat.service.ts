@@ -71,6 +71,12 @@ export class ChatService {
         return this.currentSessionSubject.value;
     }
 
+    getLastAiMessageId(): number {
+        const messagesByIdDesc = this.messagesSubject.value.sort((m1, m2) => m2.id - m1.id);
+        const aiMessagesByIdDesc = messagesByIdDesc.filter(m => m.sender === "ASSISTANT");
+        return aiMessagesByIdDesc.length > 0 ? aiMessagesByIdDesc[0].id : (messagesByIdDesc.length > 0 ? (messagesByIdDesc[0].id + 1) : 0);
+    }
+
     addMessagePart(message: ChatMessage) {
         const id = message.id;
         const sessionId = message.sessionId;
