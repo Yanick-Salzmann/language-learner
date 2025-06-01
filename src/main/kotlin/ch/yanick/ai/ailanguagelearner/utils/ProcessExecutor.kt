@@ -22,4 +22,21 @@ object ProcessExecutor {
                 it.environment().putAll(environment)
             }.start()
     }
+
+    fun executeCommandWithOutput(
+        directory: File,
+        vararg command: String,
+        environment: Map<String, String> = emptyMap()
+    ): Pair<Int, String> {
+        val process = ProcessBuilder(*command)
+            .directory(directory)
+            .redirectErrorStream(true)
+            .also {
+                it.environment().putAll(environment)
+            }.start()
+
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val exitCode = process.waitFor()
+        return Pair(exitCode, output)
+    }
 }

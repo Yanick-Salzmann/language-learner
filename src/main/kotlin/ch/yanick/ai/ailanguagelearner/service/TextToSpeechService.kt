@@ -36,7 +36,9 @@ class TextToSpeechService {
 
     @PostConstruct
     fun initialize() {
-        val targetFolder = this.setupVenv()
+        log.info("Initializing TextToSpeechService...")
+        val cudaVersion = ensureCudaInstalled()
+        val targetFolder = this.setupVenv(cudaVersion)
         this.setupXttsModel(targetFolder)
         this.startXttsServerThread()
         this.startPythonThread(targetFolder)
@@ -198,7 +200,7 @@ class TextToSpeechService {
         checkAndExtractSample(folder)
     }
 
-    private fun setupVenv(): File {
+    private fun setupVenv(cudaVersion: String): File {
         val userFolder = File(System.getProperty("user.home"))
         if (!userFolder.exists()) {
             throw IllegalStateException("User home directory does not exist: $userFolder")
@@ -227,7 +229,7 @@ class TextToSpeechService {
                     targetFolder,
                     "cmd",
                     "/c",
-                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\""
+                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$cudaVersion\""
                 ) != 0
             ) {
                 throw IllegalStateException("Failed to install PyTorch dependencies")
@@ -295,5 +297,23 @@ class TextToSpeechService {
     private fun resourceToByteArray(resourcePath: String): ByteArray {
         return javaClass.getResourceAsStream(resourcePath)?.use { IOUtils.toByteArray(it) }
             ?: throw IllegalStateException("Resource not found: $resourcePath")
+    }
+
+    private fun ensureCudaInstalled(): String {
+        val (exitCode, output) = ProcessExecutor.executeCommandWithOutput(
+            File("."),
+            "nvcc", "--version"
+        )
+
+        if (exitCode != 0) {
+            throw IllegalStateException("CUDA is not installed or not found in PATH. Please install CUDA to use XTTS.")
+        }
+
+        val versionLine = output.lines().firstOrNull { it.contains("Cuda compilation tools") }
+            ?: throw IllegalStateException("Could not determine CUDA version from output: $output")
+        val version = versionLine.substringAfter("release").substringBefore(",").trim()
+
+        log.info("Detected CUDA version: $version")
+        return "cu${version.replace(".", "")}"
     }
 }
