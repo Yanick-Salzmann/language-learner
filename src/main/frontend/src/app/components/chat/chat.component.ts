@@ -101,28 +101,37 @@ export class ChatComponent implements OnInit {
         };
         this.chatService.addMessage(userMessage)
 
+        let lastId = 0
         // Send message to backend
         this.chatService.sendMessage(currentSession.id, content, currentSession.language).subscribe({
             next: (aiMessage: ChatMessageChunk) => {
-                this.chatService.addMessagePart({
-                        content: aiMessage.content,
-                        id: aiMessage.id,
-                        language: currentSession.language,
-                        sender: "ASSISTANT",
-                        sessionId: currentSession.id,
-                        timestamp: new Date().toISOString()
-                    }
-                )
-
-                this.isLoading = false
-                this.scrollToBottom()
+                lastId = aiMessage.id
+                this.addMessageChunk(currentSession, aiMessage)
             },
             error: (error) => {
-                console.error('Error sending message:', error);
-                this.isLoading = false
+                this.addMessageChunk(currentSession, {
+                    id: lastId,
+                    content: error.toString(),
+                    isEnd: true
+                })
             }
         });
 
+        this.scrollToBottom()
+    }
+
+    private addMessageChunk(currentSession: ChatSession, aiMessage: ChatMessageChunk) {
+        this.chatService.addMessagePart({
+                content: aiMessage.content,
+                id: aiMessage.id,
+                language: currentSession.language,
+                sender: "ASSISTANT",
+                sessionId: currentSession.id,
+                timestamp: new Date().toISOString()
+            }
+        )
+
+        this.isLoading = false
         this.scrollToBottom()
     }
 

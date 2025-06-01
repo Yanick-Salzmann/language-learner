@@ -39,22 +39,23 @@ export class ChatService {
     }
 
     sendMessage(sessionId: string, content: string, language: string): Observable<ChatMessageChunk> {
-        const source = new EventSource(`${this.apiUrl}/chat/sessions/${sessionId}/messages?&message=${encodeURIComponent(content)}&language=${encodeURIComponent(language)}`,)
+        const source = new EventSource(`${this.apiUrl}/chat/sessions/${sessionId}/messages?&message=${encodeURIComponent(content)}&language=${encodeURIComponent(language)}`)
         return new Observable(obs => {
             source.onmessage = (event) => {
-                const data: string = event.data.toString()
-                if (event.type === "close") {
-                    obs.complete();
-                    source.close();
+                const data = JSON.parse(event.data.toString()) as ChatMessageChunk
+                if (data.isEnd) {
+                    obs.complete()
+                    source.close()
                 } else {
-                    obs.next(JSON.parse(data) as ChatMessageChunk);
+                    obs.next(data)
                 }
-            };
+            }
+
             source.onerror = (error) => {
-                obs.error(error);
-                source.close();
-            };
-        });
+                obs.error(error)
+                source.close()
+            }
+        })
     }
 
     setCurrentSession(session: ChatSession | null): void {

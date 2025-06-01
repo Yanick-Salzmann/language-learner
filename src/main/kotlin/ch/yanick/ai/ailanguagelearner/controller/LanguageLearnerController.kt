@@ -82,7 +82,7 @@ class LanguageLearnerController(
                         ServerSentEvent
                             .builder(mapper.writeValueAsString(it))
                             .id(UUID.randomUUID().toString())
-                            .event("close")
+                            .event("message")
                             .build()
                     )
                     close()
@@ -139,13 +139,6 @@ class LanguageLearnerController(
         ).filter { it.id == id }
             .next()
             .switchIfEmpty(Mono.error(RuntimeException("Lesson not found with id: $id")))
-    }
-
-    @GetMapping("/stream")
-    fun streamData(): Flux<String> {
-        return Flux.interval(Duration.ofSeconds(1))
-            .map { "Streaming data point: $it at ${LocalDateTime.now()}" }
-            .take(10)
     }
 }
 
