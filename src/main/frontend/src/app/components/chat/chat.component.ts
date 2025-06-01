@@ -42,6 +42,20 @@ import {Observable} from 'rxjs';
         </div>
     `,
     styles: [`
+      .chat-main {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        
+        .chat-messages {
+          flex-grow: 1;
+        }
+        
+        app-chat-input {
+          flex-grow: 0;
+        }
+      }
+      
       .welcome-message {
         display: flex;
         align-items: center;
