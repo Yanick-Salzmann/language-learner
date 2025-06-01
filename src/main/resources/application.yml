@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-language-learner
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driverClassName: org.h2.Driver
+    username: sa
+    password: password
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+  h2:
+    console:
+      enabled: true
+
+ai:
+  provider: ollama  # Options: ollama, openai, azure
+  timeout: 600000
+  ollama:
+    base-url: http://localhost:11555
+    model: deepseek-r1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    ch.yanick.ai.ailanguagelearner: DEBUG
+    org.springframework.web: DEBUG
+    reactor.netty: INFO
