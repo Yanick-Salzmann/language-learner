@@ -38,6 +38,10 @@ A modern web application that provides AI-powered language learning through conv
 - **Maven 3.6** or higher
 - **Node.js 20.11.0** (automatically installed via frontend-maven-plugin)
 - **AI Provider** (Ollama, OpenAI API key, or Azure credentials)
+- **CUDA Toolkit** (need for GPU acceleration of local AI based text to speech)
+  - Required for optimal performance when using Ollama with GPU-accelerated models
+  - Download from [NVIDIA CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
+  - Ensure your NVIDIA GPU supports CUDA and has sufficient VRAM (8GB+ recommended)
 
 ## 🚀 Getting Started
 
