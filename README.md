@@ -7,7 +7,7 @@ A modern web application that provides AI-powered language learning through conv
 - **AI-Powered Conversations**: Chat with an AI language teacher using LangChain4j
 - **Multiple Language Support**: Practice English, Spanish, French, German, Italian, and Portuguese (more languages can be added)
 - **Real-time Streaming**: Get AI responses in real-time with Server-Sent Events
-- **Chat History**: Persistent chat sessions with H2 database storage
+- **Chat History**: Persistent chat sessions with PostgreSQL database storage
 - **Text-to-Speech**: Audio playback for AI responses to help with pronunciation
 - **Modern UI**: Responsive Angular frontend with SIX Group UI components
 - **Multiple AI Providers**: Support for Ollama, OpenAI, and Azure AI models
@@ -18,7 +18,7 @@ A modern web application that provides AI-powered language learning through conv
 - **Kotlin** with Spring Boot 3.4.5
 - **Spring WebFlux** for reactive programming
 - **LangChain4j** for AI integration
-- **H2 Database** for chat history persistence
+- **PostgreSQL** for chat history persistence
 - **WebSockets** for real-time communication
 
 ### Frontend
@@ -36,6 +36,7 @@ A modern web application that provides AI-powered language learning through conv
 
 - **Java 17** or higher
 - **Maven 3.6** or higher
+- **PostgreSQL** database server
 - **Node.js 20.11.0** (automatically installed via frontend-maven-plugin)
 - **AI Provider** (Ollama, OpenAI API key, or Azure credentials)
 - **CUDA Toolkit** (need for GPU acceleration of local AI based text to speech)
@@ -51,7 +52,24 @@ git clone <repository-url>
 cd ai-language-learner
 ```
 
-### 2. Configure AI Provider
+### 2. Setup Database
+
+Install and configure PostgreSQL:
+
+1. **Install PostgreSQL** (version 12 or higher)
+2. **Create a database** (default: `postgres`)
+3. **Configure connection** in `src/main/resources/application-local.yaml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres
+    driverClassName: org.postgresql.Driver
+    username: postgres
+    password: your-password
+```
+
+### 3. Configure AI Provider
 
 Edit `src/main/resources/application.yml`:
 
@@ -83,12 +101,12 @@ ai:
     deployment-name: your-deployment-name
 ```
 
-### 3. Run the Application
+### 4. Run the Application
 
 **Using Maven:**
 ```bash
 # Build and run the application (includes frontend build)
-mvn clean spring-boot:run
+mvn clean spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 **Using JAR:**
@@ -96,8 +114,8 @@ mvn clean spring-boot:run
 # Build the complete application
 mvn clean package
 
-# Run the JAR
-java -jar target/ai-language-learner-1.0-SNAPSHOT.jar
+# Run the JAR with local profile
+java -jar target/ai-language-learner-1.0-SNAPSHOT.jar --spring.profiles.active=local
 ```
 
 The application will start on `http://localhost:8080`
