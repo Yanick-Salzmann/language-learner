@@ -23,7 +23,7 @@ ai:
   timeout: 600000
   ollama:
     base-url: http://localhost:11555
-    model: deepseek-r1
+    model: gemma3
 
 management:
   endpoints:

@@ -76,7 +76,7 @@ export class ChatService {
     }
 
     getLastAiMessageId(): number {
-        const messagesByIdDesc = this.messagesSubject.value.sort((m1, m2) => m2.id - m1.id);
+        const messagesByIdDesc = [...this.messagesSubject.value].sort((m1, m2) => m2.id - m1.id);
         const aiMessagesByIdDesc = messagesByIdDesc.filter(m => m.sender === "ASSISTANT");
         return aiMessagesByIdDesc.length > 0 ? aiMessagesByIdDesc[0].id : (messagesByIdDesc.length > 0 ? (messagesByIdDesc[0].id + 1) : 0);
     }
@@ -104,9 +104,11 @@ export class ChatService {
     }
 
     addMessage(message: ChatMessage): void {
-        const currentMessages = this.messagesSubject.value;
-        this.messagesSubject.next([...currentMessages, {...message, content: new BehaviorSubject(message.content)}]);
-        console.log(this.messagesSubject.value)
+        let newMessages = [...this.messagesSubject.value, {
+            ...message,
+            content: new BehaviorSubject(message.content)
+        }]
+        this.messagesSubject.next(newMessages);
     }
 
     private loadSessions(): void {

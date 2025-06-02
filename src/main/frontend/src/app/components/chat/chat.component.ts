@@ -138,8 +138,6 @@ export class ChatComponent implements OnInit {
     }
 
     private addMessageChunk(currentSession: ChatSession, aiMessage: ChatMessageChunk) {
-        console.log("Adding message chunk: ", aiMessage)
-
         this.chatService.addMessagePart({
                 content: aiMessage.content,
                 id: aiMessage.id,
