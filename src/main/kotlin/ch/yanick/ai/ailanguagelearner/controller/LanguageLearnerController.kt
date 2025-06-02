@@ -96,7 +96,7 @@ class LanguageLearnerController(
         }.asFlux()
     }
 
-    @PostMapping("/tts")
+    @PostMapping("/tts", produces = ["audio/wav"])
     fun generateSpeechFromText(
         @RequestBody request: TTSRequest
     ): Flux<DataBuffer> {

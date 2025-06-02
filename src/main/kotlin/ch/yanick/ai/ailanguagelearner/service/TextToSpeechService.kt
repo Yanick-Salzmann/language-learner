@@ -2,17 +2,20 @@ package ch.yanick.ai.ailanguagelearner.service
 
 import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
 import ch.yanick.ai.ailanguagelearner.utils.calculateSha256AsHexString
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import org.apache.commons.io.IOUtils
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import java.io.File
 import java.math.BigInteger
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.Semaphore
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -33,6 +36,14 @@ class TextToSpeechService {
     private var startupError: Throwable? = null
 
     private var isShutdownRequest = false
+
+    private val limiter = Semaphore(1, true)
+
+    private val mapper = jacksonObjectMapper()
+
+    private var dataCallback: (data: ByteArray) -> Unit = {}
+
+    data class TTSRequest(val text: String, val language: String)
 
     @PostConstruct
     fun initialize() {
@@ -59,6 +70,31 @@ class TextToSpeechService {
             pythonThread.interrupt()
             pythonThread.join()
             log.info("Python XTTS thread shut down gracefully")
+        }
+    }
+
+    fun generateSpeech(text: String, language: String = "en"): Flux<DataBuffer> {
+        // remove all emojis from text
+        val sanitizedText = text.replace(Regex("[\\p{So}\\p{Cn}]+"), "")
+
+        limiter.acquire()
+        try {
+            val client = acceptedClient ?: return Flux.empty()
+            val factory = DefaultDataBufferFactory()
+            return Flux.create { sink ->
+                dataCallback = {
+                    if (it.isEmpty()) {
+                        sink.complete()
+                    } else {
+                        val buffer = factory.allocateBuffer(it.size)
+                        buffer.write(it)
+                        sink.next(buffer)
+                    }
+                }
+                client.outputStream.write(mapper.writeValueAsBytes(TTSRequest(sanitizedText, language)).plus(1))
+            }
+        } finally {
+            limiter.release()
         }
     }
 
@@ -144,12 +180,10 @@ class TextToSpeechService {
                 log.info("XTTS client connected from ${acceptedClient?.inetAddress?.hostAddress}:${acceptedClient?.port}")
 
                 acceptedClient?.inputStream?.use {
-                    do {
+                    while(!isShutdownRequest) {
                         val length = BigInteger(it.readNBytes(4)).toInt()
-                        if (length > 0) {
-                            onData(it.readNBytes(length))
-                        }
-                    } while (length > 0)
+                        onData(it.readNBytes(length))
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -161,12 +195,8 @@ class TextToSpeechService {
         }
     }
 
-    fun generateSpeech(text: String, language: String = "en"): Flux<DataBuffer> {
-        return Flux.empty()
-    }
-
     private fun onData(data: ByteArray) {
-
+        dataCallback(data)
     }
 
     private fun setupXttsModel(folder: File) {
@@ -229,7 +259,7 @@ class TextToSpeechService {
                     targetFolder,
                     "cmd",
                     "/c",
-                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$cudaVersion\""
+                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\""
                 ) != 0
             ) {
                 throw IllegalStateException("Failed to install PyTorch dependencies")
@@ -239,7 +269,7 @@ class TextToSpeechService {
                     targetFolder,
                     "cmd",
                     "/c",
-                    "\"Scripts\\activate.bat && pip install git+https://github.com/idiap/coqui-ai-TTS\""
+                    "\"Scripts\\activate.bat && pip install spacy[ja] git+https://github.com/idiap/coqui-ai-TTS\""
                 ) != 0
             ) {
                 throw IllegalStateException("Failed to install dependencies")
