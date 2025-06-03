@@ -23,7 +23,8 @@ import kotlin.concurrent.withLock
 @Service
 class TextToSpeechService(
     private val ttsConfiguration: AiConfiguration.TtsConfig,
-    private val pythonService: PythonService
+    private val pythonService: PythonService,
+    private val ffmpegService: FfmpegService
 ) {
     private val log = LoggerFactory.getLogger(TextToSpeechService::class.java)
 
@@ -54,6 +55,7 @@ class TextToSpeechService(
         log.info("Initializing TextToSpeechService...")
         val cudaVersion = ensureCudaInstalled(ttsConfiguration.cudaVersion)
         val targetFolder = this.setupVenv(cudaVersion)
+        ffmpegService.downloadFfmpeg(targetFolder)
         this.setupXttsModel(targetFolder)
         this.startXttsServerThread()
         this.startPythonThread(targetFolder)
