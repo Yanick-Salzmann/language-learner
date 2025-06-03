@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.util.*
+import kotlin.jvm.optionals.getOrNull
 
 @RestController
 @RequestMapping("/api")
@@ -96,11 +97,18 @@ class LanguageLearnerController(
         }.asFlux()
     }
 
-    @PostMapping("/tts", produces = ["audio/wav"])
+    @GetMapping("/chat/sessions/{sessionId}/messages/{messageId}/tts", produces = ["audio/wav"])
     fun generateSpeechFromText(
-        @RequestBody request: TTSRequest
+        @RequestParam("language") language: String,
+        @PathVariable("sessionId") sessionId: String,
+        @PathVariable("messageId") messageId: Long
     ): Flux<DataBuffer> {
-        return textToSpeechService.generateSpeech(request.text, request.language)
+        val message = chatMessageRepository.findById(messageId).getOrNull()
+        if (message == null) {
+            return Flux.empty()
+        }
+
+        return textToSpeechService.generateSpeech(message.content, language)
     }
 }
 

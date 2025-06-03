@@ -16,7 +16,8 @@ data class AiConfiguration(
     var timeout: Long = 60000,
     var openai: OpenAiConfig = OpenAiConfig(),
     var azure: AzureConfig = AzureConfig(),
-    var ollama: OllamaConfig = OllamaConfig()
+    var ollama: OllamaConfig = OllamaConfig(),
+    var tts: TtsConfig = TtsConfig()
 ) {
     data class OpenAiConfig(
         var apiKey: String = "",
@@ -32,6 +33,10 @@ data class AiConfiguration(
     data class OllamaConfig(
         var baseUrl: String = "http://localhost:11434",
         var model: String = "llama2"
+    )
+
+    data class TtsConfig(
+        var cudaVersion: String = ""
     )
     
     @Bean
@@ -53,4 +58,7 @@ data class AiConfiguration(
             else -> throw IllegalArgumentException("Unsupported AI provider: $provider")
         }
     }
+
+    @Bean
+    fun ttsConfig(): TtsConfig = tts
 }

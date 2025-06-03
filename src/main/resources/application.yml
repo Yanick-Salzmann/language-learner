@@ -16,6 +16,9 @@ ai:
     base-url: http://localhost:11555
     model: gemma3
 
+  tts:
+    cuda-version: cu128
+
 management:
   endpoints:
     web:

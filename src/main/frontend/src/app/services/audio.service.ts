@@ -1,45 +1,44 @@
-import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { TTSRequest } from '../models/chat.models';
+import {Injectable} from '@angular/core';
+import {HttpClient} from '@angular/common/http';
+import {Observable} from 'rxjs';
+import {TTSRequest} from '../models/chat.models';
 
 @Injectable({
-  providedIn: 'root'
+    providedIn: 'root'
 })
 export class AudioService {
-  private readonly apiUrl = '/api';
+    private readonly apiUrl = '/api';
 
-  constructor(private http: HttpClient) {}
+    constructor(private http: HttpClient) {
+    }
 
-  generateSpeech(text: string, language: string = 'en'): Observable<Blob> {
-    const request: TTSRequest = { text, language };
-    return this.http.post(`${this.apiUrl}/tts`, request, {
-      responseType: 'blob'
-    });
-  }
+    generateSpeech(text: string, language: string = 'en'): Observable<Blob> {
+        const request: TTSRequest = {text, language};
+        return this.http.post(`${this.apiUrl}/tts`, request, {
+            responseType: 'blob'
+        });
+    }
 
-  playAudio(audioBlob: Blob): void {
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
-    
-    audio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-    };
-    
-    audio.play().catch(error => {
-      console.error('Error playing audio:', error);
-      URL.revokeObjectURL(audioUrl);
-    });
-  }
+    playAudio(audioBlob: Blob): void {
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
 
-  generateAndPlaySpeech(text: string, language: string = 'en'): void {
-    this.generateSpeech(text, language).subscribe({
-      next: (audioBlob) => {
-        this.playAudio(audioBlob);
-      },
-      error: (error) => {
-        console.error('Error generating speech:', error);
-      }
-    });
-  }
+        audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+        };
+
+        audio.play().catch(error => {
+            console.error('Error playing audio:', error);
+            URL.revokeObjectURL(audioUrl);
+        });
+    }
+
+    generateAndPlaySpeech(msgId: number, sessionId: string, language: string = 'en'): void {
+        const url = `${this.apiUrl}/chat/sessions/${sessionId}/messages/${msgId}/tts?language=${encodeURIComponent(language)}`
+        const audio = new Audio(url)
+        audio.preload = 'auto'
+        audio.play().then(() => {
+            console.log("Done playing")
+        })
+    }
 }

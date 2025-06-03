@@ -1,11 +1,12 @@
 package ch.yanick.ai.ailanguagelearner.service
 
+import ch.yanick.ai.ailanguagelearner.config.AiConfiguration
 import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
+import ch.yanick.ai.ailanguagelearner.utils.ResourceUtils
 import ch.yanick.ai.ailanguagelearner.utils.calculateSha256AsHexString
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
-import org.apache.commons.io.IOUtils
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DefaultDataBufferFactory
@@ -20,7 +21,10 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 @Service
-class TextToSpeechService {
+class TextToSpeechService(
+    private val ttsConfiguration: AiConfiguration.TtsConfig,
+    private val pythonService: PythonService
+) {
     private val log = LoggerFactory.getLogger(TextToSpeechService::class.java)
 
     private val acceptorThread = Thread(this::serverThread)
@@ -48,7 +52,7 @@ class TextToSpeechService {
     @PostConstruct
     fun initialize() {
         log.info("Initializing TextToSpeechService...")
-        val cudaVersion = ensureCudaInstalled()
+        val cudaVersion = ensureCudaInstalled(ttsConfiguration.cudaVersion)
         val targetFolder = this.setupVenv(cudaVersion)
         this.setupXttsModel(targetFolder)
         this.startXttsServerThread()
@@ -82,6 +86,11 @@ class TextToSpeechService {
             val client = acceptedClient ?: return Flux.empty()
             val factory = DefaultDataBufferFactory()
             return Flux.create { sink ->
+                val wavHeader = createWavHeader(22050, 32, 1, 1024 * 1024 * 900 * 4)
+                val headerBuffer = factory.allocateBuffer(wavHeader.size)
+                headerBuffer.write(wavHeader)
+                sink.next(headerBuffer)
+
                 dataCallback = {
                     if (it.isEmpty()) {
                         sink.complete()
@@ -236,76 +245,14 @@ class TextToSpeechService {
             throw IllegalStateException("User home directory does not exist: $userFolder")
         }
 
+
         val targetFolder = File(userFolder, ".ai-language-learner")
-        if (targetFolder.exists() && File(targetFolder, "pyvenv.cfg").exists()) {
-            checkAndExtractScript(targetFolder)
-            return targetFolder
-        }
-
-        if (!targetFolder.mkdirs()) {
-            throw IllegalStateException("Unable to create directory: $targetFolder")
-        }
-
-        log.info("Creating python venv in folder $targetFolder")
-
-        try {
-            if (ProcessExecutor.executeCommand(targetFolder, "python.exe", "-m", "venv", ".") != 0) {
-                throw IllegalStateException("Failed to initialize python venv in $targetFolder")
-            }
-
-            log.info("Done creating python venv, installing required dependencies next...")
-
-            if (ProcessExecutor.executeCommand(
-                    targetFolder,
-                    "cmd",
-                    "/c",
-                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128\""
-                ) != 0
-            ) {
-                throw IllegalStateException("Failed to install PyTorch dependencies")
-            }
-
-            if (ProcessExecutor.executeCommand(
-                    targetFolder,
-                    "cmd",
-                    "/c",
-                    "\"Scripts\\activate.bat && pip install spacy[ja] git+https://github.com/idiap/coqui-ai-TTS\""
-                ) != 0
-            ) {
-                throw IllegalStateException("Failed to install dependencies")
-            }
-
-            checkAndExtractScript(targetFolder)
-        } catch (e: Exception) {
-            // if anything failed, let's just delete everything so that next time it will try again
-            targetFolder.deleteRecursively()
-            throw e
-        }
-
+        pythonService.initializeVenv(targetFolder, cudaVersion, "spacy[ja]", "git+https://github.com/idiap/coqui-ai-TTS")
         return targetFolder
     }
 
-    private fun checkAndExtractScript(folder: File) {
-        val content = resourceToByteArray("/tts/xtts.py")
-
-        val hash = content.calculateSha256AsHexString()
-        val hashFile = File(folder, "xtts.py.sha256")
-        if (hashFile.exists()) {
-            val existingHash = hashFile.readText().trim()
-            if (existingHash == hash) {
-                log.info("Python script xtts.py is already up to date")
-                return
-            }
-        }
-
-        log.info("Extracting python script xtts.py to $folder")
-        val scriptFile = File(folder, "xtts.py")
-        scriptFile.writeBytes(content)
-        hashFile.writeText(hash)
-    }
-
     private fun checkAndExtractSample(folder: File) {
-        val content = resourceToByteArray("/tts/generated.wav")
+        val content = ResourceUtils.resourceToByteArray("/tts/generated.wav")
         val sampleFile = File(folder, "generated.wav")
         val hash = content.calculateSha256AsHexString()
         val hashFile = File(folder, "generated.wav.sha256")
@@ -324,12 +271,7 @@ class TextToSpeechService {
 
     }
 
-    private fun resourceToByteArray(resourcePath: String): ByteArray {
-        return javaClass.getResourceAsStream(resourcePath)?.use { IOUtils.toByteArray(it) }
-            ?: throw IllegalStateException("Resource not found: $resourcePath")
-    }
-
-    private fun ensureCudaInstalled(): String {
+    private fun ensureCudaInstalled(requestedVersion: String): String {
         val (exitCode, output) = ProcessExecutor.executeCommandWithOutput(
             File("."),
             "nvcc", "--version"
@@ -344,6 +286,59 @@ class TextToSpeechService {
         val version = versionLine.substringAfter("release").substringBefore(",").trim()
 
         log.info("Detected CUDA version: $version")
-        return "cu${version.replace(".", "")}"
+        val shortVersion = "cu${version.replace(".", "")}"
+        if(requestedVersion.isNotBlank() && requestedVersion != shortVersion) {
+            log.warn("Requested cuda dependency version $requestedVersion but found installed version to be $shortVersion. Using $requestedVersion")
+        }
+
+        return requestedVersion.ifBlank { shortVersion }
+    }
+
+    /**
+     * Creates a WAV header for raw PCM data
+     * @param sampleRate Sample rate in Hz (e.g., 44100, 22050)
+     * @param bitsPerSample Bit depth (e.g., 16, 24, 32)
+     * @param channels Number of audio channels (1 for mono, 2 for stereo)
+     * @param dataLength Length of the PCM data in bytes
+     * @return ByteArray containing the 44-byte WAV header
+     */
+    private fun createWavHeader(sampleRate: Int = 22050, bitsPerSample: Int = 16, channels: Int = 1, dataLength: Int): ByteArray {
+        val bytesPerSample = bitsPerSample / 8
+        val byteRate = sampleRate * channels * bytesPerSample
+        val blockAlign = channels * bytesPerSample
+        val totalSize = 36 + dataLength
+        
+        return ByteArray(44).apply {
+            // RIFF header
+            "RIFF".toByteArray().copyInto(this, 0)
+            putLittleEndianInt(totalSize, 4)
+            "WAVE".toByteArray().copyInto(this, 8)
+            
+            // fmt subchunk
+            "fmt ".toByteArray().copyInto(this, 12)
+            putLittleEndianInt(16, 16) // Subchunk1Size (16 for PCM)
+            putLittleEndianShort(1, 20) // AudioFormat (1 for PCM)
+            putLittleEndianShort(channels, 22) // NumChannels
+            putLittleEndianInt(sampleRate, 24) // SampleRate
+            putLittleEndianInt(byteRate, 28) // ByteRate
+            putLittleEndianShort(blockAlign, 32) // BlockAlign
+            putLittleEndianShort(bitsPerSample, 34) // BitsPerSample
+            
+            // data subchunk
+            "data".toByteArray().copyInto(this, 36)
+            putLittleEndianInt(dataLength, 40)
+        }
+    }
+    
+    private fun ByteArray.putLittleEndianInt(value: Int, offset: Int) {
+        this[offset] = (value and 0xFF).toByte()
+        this[offset + 1] = ((value shr 8) and 0xFF).toByte()
+        this[offset + 2] = ((value shr 16) and 0xFF).toByte()
+        this[offset + 3] = ((value shr 24) and 0xFF).toByte()
+    }
+    
+    private fun ByteArray.putLittleEndianShort(value: Int, offset: Int) {
+        this[offset] = (value and 0xFF).toByte()
+        this[offset + 1] = ((value shr 8) and 0xFF).toByte()
     }
 }
