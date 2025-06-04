@@ -48,7 +48,10 @@ import {Observable} from 'rxjs';
         flex-direction: column;
 
         .chat-messages {
-          flex-grow: 1;
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px;
+          background: #fafbfc;
         }
 
         app-chat-input {

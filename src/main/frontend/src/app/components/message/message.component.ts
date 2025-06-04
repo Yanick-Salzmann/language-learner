@@ -36,7 +36,92 @@ import {Observable, Subscription} from 'rxjs';
                 </div>
                 <div class="message-time">{{ formatTime(message.timestamp) }}</div>
             </div>
-        </div>    `, styles: [`
+        </div>`,
+    styles: [`
+    .message {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+
+      &.user {
+        flex-direction: row-reverse;
+
+        .message-content {
+          background: var(--primary-color);
+          color: white;
+        }
+      }
+
+      &.ai {
+        .message-content {
+          background: white;
+          border: 1px solid var(--border-color);
+          color: var(--text-color);
+        }
+      }
+
+      .message-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--primary-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        flex-shrink: 0;
+
+        &.ai {
+          background: #6c757d;
+        }
+      }
+
+      .message-content {
+        max-width: 70%;
+        padding: 12px 16px;
+        border-radius: 18px;
+        position: relative;
+        line-height: 1.6em;
+
+        li {
+          margin-left: 1em;
+        }
+      }
+
+      .message-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      &:hover .message-actions, .message-actions.playing {
+        opacity: 1;
+      }
+    }
+
+    .speak-button {
+      background: none;
+      border: none;
+      color: #6c757d;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+
+      &.playing {
+        color: var(--primary-color);
+      }
+
+      &:hover {
+        background-color: #f8f9fa;
+        color: var(--primary-color);
+      }
+    }
+    
     .message-time {
       font-size: 0.75rem;
       opacity: 0.6;

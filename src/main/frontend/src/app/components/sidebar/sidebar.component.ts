@@ -59,6 +59,41 @@ import { Observable } from 'rxjs';
       color: var(--text-color);
       font-size: 1.1rem;
     }
+
+    .chat-session-item {
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      border: 1px solid transparent;
+    }
+
+    .chat-session-item:hover {
+      background-color: #f8f9fa;
+    }
+
+    .chat-session-item.active {
+      background-color: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+
+    .session-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .session-date {
+      font-size: 0.875rem;
+      opacity: 0.7;
+    }
+
+    .new-chat-button {
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
   `]
 })
 export class SidebarComponent implements OnInit {

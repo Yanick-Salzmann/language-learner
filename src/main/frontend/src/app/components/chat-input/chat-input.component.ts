@@ -32,14 +32,38 @@ import { Component, Output, EventEmitter } from '@angular/core';
       gap: 12px;
       align-items: flex-end;
     }
-    
+
     .chat-input {
       flex: 1;
     }
-    
+
     .send-button {
       flex-shrink: 0;
       height: fit-content;
+    }
+
+    .chat-input-form {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .chat-input-area {
+      padding: 20px;
+      background: white;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .chat-input {
+      flex: 1;
+    }
+
+    .chat-input six-textarea {
+      width: 100%;
+    }
+
+    .send-button {
+      flex-shrink: 0;
     }
   `]
 })
