@@ -14,6 +14,18 @@ object ProcessExecutor {
         return process.waitFor()
     }
 
+    fun buildCommand(
+        directory: File,
+        vararg command: String,
+        environment: Map<String, String> = emptyMap()
+    ): ProcessBuilder {
+        return ProcessBuilder(*command)
+            .directory(directory)
+            .also {
+                it.environment().putAll(environment)
+            }
+    }
+
     fun executeCommandNoWait(directory: File, vararg command: String, environment: Map<String, String> = emptyMap()): Process {
         return ProcessBuilder(*command)
             .directory(directory)

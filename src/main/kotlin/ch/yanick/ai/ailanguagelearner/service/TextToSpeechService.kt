@@ -48,6 +48,8 @@ class TextToSpeechService(
 
     private var dataCallback: (data: ByteArray) -> Unit = {}
 
+    private lateinit var workingDir: File
+
     data class TTSRequest(val text: String, val language: String)
 
     @PostConstruct
@@ -55,6 +57,7 @@ class TextToSpeechService(
         log.info("Initializing TextToSpeechService...")
         val cudaVersion = ensureCudaInstalled(ttsConfiguration.cudaVersion)
         val targetFolder = this.setupVenv(cudaVersion)
+        workingDir = targetFolder
         ffmpegService.downloadFfmpeg(targetFolder)
         this.setupXttsModel(targetFolder)
         this.startXttsServerThread()
@@ -87,23 +90,16 @@ class TextToSpeechService(
         try {
             val client = acceptedClient ?: return Flux.empty()
             val factory = DefaultDataBufferFactory()
-            return Flux.create { sink ->
-                val wavHeader = createWavHeader(22050, 32, 1, 1024 * 1024 * 900 * 4)
-                val headerBuffer = factory.allocateBuffer(wavHeader.size)
-                headerBuffer.write(wavHeader)
-                sink.next(headerBuffer)
-
+            return ffmpegService.createWavFlux(Flux.create { sink ->
                 dataCallback = {
                     if (it.isEmpty()) {
                         sink.complete()
                     } else {
-                        val buffer = factory.allocateBuffer(it.size)
-                        buffer.write(it)
-                        sink.next(buffer)
+                        sink.next(it)
                     }
                 }
                 client.outputStream.write(mapper.writeValueAsBytes(TTSRequest(sanitizedText, language)).plus(1))
-            }
+            }, workingDir)
         } finally {
             limiter.release()
         }
@@ -191,7 +187,7 @@ class TextToSpeechService(
                 log.info("XTTS client connected from ${acceptedClient?.inetAddress?.hostAddress}:${acceptedClient?.port}")
 
                 acceptedClient?.inputStream?.use {
-                    while(!isShutdownRequest) {
+                    while (!isShutdownRequest) {
                         val length = BigInteger(it.readNBytes(4)).toInt()
                         onData(it.readNBytes(length))
                     }
@@ -249,7 +245,12 @@ class TextToSpeechService(
 
 
         val targetFolder = File(userFolder, ".ai-language-learner")
-        pythonService.initializeVenv(targetFolder, cudaVersion, "spacy[ja]", "git+https://github.com/idiap/coqui-ai-TTS")
+        pythonService.initializeVenv(
+            targetFolder,
+            cudaVersion,
+            "spacy[ja]",
+            "git+https://github.com/idiap/coqui-ai-TTS"
+        )
         return targetFolder
     }
 
@@ -289,58 +290,10 @@ class TextToSpeechService(
 
         log.info("Detected CUDA version: $version")
         val shortVersion = "cu${version.replace(".", "")}"
-        if(requestedVersion.isNotBlank() && requestedVersion != shortVersion) {
+        if (requestedVersion.isNotBlank() && requestedVersion != shortVersion) {
             log.warn("Requested cuda dependency version $requestedVersion but found installed version to be $shortVersion. Using $requestedVersion")
         }
 
         return requestedVersion.ifBlank { shortVersion }
-    }
-
-    /**
-     * Creates a WAV header for raw PCM data
-     * @param sampleRate Sample rate in Hz (e.g., 44100, 22050)
-     * @param bitsPerSample Bit depth (e.g., 16, 24, 32)
-     * @param channels Number of audio channels (1 for mono, 2 for stereo)
-     * @param dataLength Length of the PCM data in bytes
-     * @return ByteArray containing the 44-byte WAV header
-     */
-    private fun createWavHeader(sampleRate: Int = 22050, bitsPerSample: Int = 16, channels: Int = 1, dataLength: Int): ByteArray {
-        val bytesPerSample = bitsPerSample / 8
-        val byteRate = sampleRate * channels * bytesPerSample
-        val blockAlign = channels * bytesPerSample
-        val totalSize = 36 + dataLength
-        
-        return ByteArray(44).apply {
-            // RIFF header
-            "RIFF".toByteArray().copyInto(this, 0)
-            putLittleEndianInt(totalSize, 4)
-            "WAVE".toByteArray().copyInto(this, 8)
-            
-            // fmt subchunk
-            "fmt ".toByteArray().copyInto(this, 12)
-            putLittleEndianInt(16, 16) // Subchunk1Size (16 for PCM)
-            putLittleEndianShort(1, 20) // AudioFormat (1 for PCM)
-            putLittleEndianShort(channels, 22) // NumChannels
-            putLittleEndianInt(sampleRate, 24) // SampleRate
-            putLittleEndianInt(byteRate, 28) // ByteRate
-            putLittleEndianShort(blockAlign, 32) // BlockAlign
-            putLittleEndianShort(bitsPerSample, 34) // BitsPerSample
-            
-            // data subchunk
-            "data".toByteArray().copyInto(this, 36)
-            putLittleEndianInt(dataLength, 40)
-        }
-    }
-    
-    private fun ByteArray.putLittleEndianInt(value: Int, offset: Int) {
-        this[offset] = (value and 0xFF).toByte()
-        this[offset + 1] = ((value shr 8) and 0xFF).toByte()
-        this[offset + 2] = ((value shr 16) and 0xFF).toByte()
-        this[offset + 3] = ((value shr 24) and 0xFF).toByte()
-    }
-    
-    private fun ByteArray.putLittleEndianShort(value: Int, offset: Int) {
-        this[offset] = (value and 0xFF).toByte()
-        this[offset + 1] = ((value shr 8) and 0xFF).toByte()
     }
 }

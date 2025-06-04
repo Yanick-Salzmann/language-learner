@@ -1,5 +1,6 @@
 package ch.yanick.ai.ailanguagelearner.service
 
+import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
 import ch.yanick.ai.ailanguagelearner.utils.executeGetDownload
 import ch.yanick.ai.ailanguagelearner.utils.executeJsonGet
 import ch.yanick.ai.ailanguagelearner.utils.logger
@@ -10,10 +11,18 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.stereotype.Component
+import reactor.core.publisher.Flux
+import reactor.core.publisher.FluxSink
+import reactor.core.scheduler.Schedulers
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.file.Paths
 import java.time.Instant
 import java.util.zip.ZipInputStream
+import kotlin.io.path.absolutePathString
 
 data class GithubReleaseAsset(
     val url: String?,
@@ -53,14 +62,14 @@ data class GithubRelease(
     val assets: List<GithubReleaseAsset> = emptyList()
 )
 
-val httpObjectMapper: ObjectMapper = jacksonObjectMapper()
-    .registerModule(JavaTimeModule())
-    .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-
 @Component
 class FfmpegService {
     private val log by logger()
+
+    val mapper: ObjectMapper = jacksonObjectMapper()
+        .registerModule(JavaTimeModule())
+        .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 
     private val httpClient = OkHttpClient.Builder()
         .followRedirects(true)
@@ -69,8 +78,86 @@ class FfmpegService {
         }.apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
 
+    fun createWavFlux(pcmFlux: Flux<ByteArray>, workingDir: File): Flux<DataBuffer> {
+        return Flux.create { sink ->
+            @Suppress("BlockingMethodInNonBlockingContext") // This is for ProcessBuilder.start, but it is a local executable that should launch instantly
+            val proc = ProcessExecutor.buildCommand(
+                File(workingDir, "ffmpeg/bin"),
+                Paths.get(workingDir.absolutePath, "ffmpeg", "bin", "ffmpeg.exe").absolutePathString(),
+                "-f",
+                "f32le",
+                "-ar",
+                "22050",
+                "-ac",
+                "1",
+                "-i",
+                "-",
+                "-f",
+                "wav",
+                "-"
+            ).redirectInput(ProcessBuilder.Redirect.PIPE)
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .start()
+
+            val inputDisposable = pcmFlux.doOnComplete {
+                proc.outputStream.close()
+            }.doOnError { error ->
+                log.error("Error in PCM flux", error)
+                proc.outputStream.close()
+            }.subscribeOn(Schedulers.boundedElastic())
+                .subscribe { data ->
+                    proc.outputStream.write(data)
+                    proc.outputStream.flush()
+                }
+
+            val conversionThread = runFfmpegConversionThread(proc, sink)
+
+            sink.onCancel {
+                inputDisposable.dispose()
+                try {
+                    proc.destroyForcibly()
+                } catch (e: Exception) {
+                    log.warn("Error destroying FFmpeg process", e)
+                }
+
+                conversionThread.interrupt()
+            }
+        }
+    }
+
+    private fun runFfmpegConversionThread(proc: Process, sink: FluxSink<DataBuffer>): Thread =
+        Thread {
+            val bufferFactory = DefaultDataBufferFactory()
+            try {
+                proc.inputStream.buffered().use { outputStream ->
+                    val buffer = ByteArray(4096)
+                    var bytesRead: Int
+                    while (outputStream.read(buffer).also { bytesRead = it } != -1) {
+                        if (sink.isCancelled) break
+                        sink.next(bufferFactory.wrap(ByteBuffer.wrap(buffer.copyOf(bytesRead))))
+                    }
+                }
+                sink.complete()
+            } catch (e: Exception) {
+                if (!sink.isCancelled) {
+                    log.error("Error reading FFmpeg output", e)
+                    sink.error(e)
+                }
+            } finally {
+                try {
+                    proc.inputStream.close()
+                    proc.outputStream.close()
+                    proc.waitFor()
+                } catch (e: Exception) {
+                    log.warn("Error cleaning up FFmpeg process", e)
+                }
+            }
+        }.also { it.start() }
+
+
     fun downloadFfmpeg(targetFolder: File) {
-        if (File(targetFolder, "ffmpeg/bin/ffmpeg.exe").exists()) {
+        if (File(targetFolder, if (isWindows) "ffmpeg/bin/ffmpeg.exe" else "ffmpeg/bin/ffmpeg").exists()) {
             log.info("FFmpeg already exists in $targetFolder, skipping download")
             return
         }
@@ -79,7 +166,7 @@ class FfmpegService {
             executeJsonGet<List<GithubRelease>>(
                 httpClient,
                 "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases",
-                httpObjectMapper
+                mapper
             ).maxByOrNull {
                 it.publishedAt
             } ?: throw IllegalStateException("No FFmpeg releases found in repository BtbN/FFmpeg-Builds")
@@ -126,6 +213,8 @@ class FfmpegService {
             }
         }
     }
+
+    private val isWindows = System.getProperty("os.name").lowercase().contains("win")
 
     private fun osString(): String {
         return with(System.getProperty("os.name").lowercase()) {
