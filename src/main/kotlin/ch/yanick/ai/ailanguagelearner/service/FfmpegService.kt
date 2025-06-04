@@ -1,9 +1,6 @@
 package ch.yanick.ai.ailanguagelearner.service
 
-import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
-import ch.yanick.ai.ailanguagelearner.utils.executeGetDownload
-import ch.yanick.ai.ailanguagelearner.utils.executeJsonGet
-import ch.yanick.ai.ailanguagelearner.utils.logger
+import ch.yanick.ai.ailanguagelearner.utils.*
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.PropertyNamingStrategies
@@ -83,7 +80,7 @@ class FfmpegService {
             @Suppress("BlockingMethodInNonBlockingContext") // This is for ProcessBuilder.start, but it is a local executable that should launch instantly
             val proc = ProcessExecutor.buildCommand(
                 File(workingDir, "ffmpeg/bin"),
-                Paths.get(workingDir.absolutePath, "ffmpeg", "bin", "ffmpeg.exe").absolutePathString(),
+                Paths.get(workingDir.absolutePath, "ffmpeg", "bin", OsUtils.binaryName("ffmpeg")).absolutePathString(),
                 "-f",
                 "f32le",
                 "-ar",
@@ -157,7 +154,7 @@ class FfmpegService {
 
 
     fun downloadFfmpeg(targetFolder: File) {
-        if (File(targetFolder, if (isWindows) "ffmpeg/bin/ffmpeg.exe" else "ffmpeg/bin/ffmpeg").exists()) {
+        if (File(targetFolder, OsUtils.binaryName("ffmpeg/bin/ffmpeg")).exists()) {
             log.info("FFmpeg already exists in $targetFolder, skipping download")
             return
         }
@@ -214,16 +211,10 @@ class FfmpegService {
         }
     }
 
-    private val isWindows = System.getProperty("os.name").lowercase().contains("win")
-
-    private fun osString(): String {
-        return with(System.getProperty("os.name").lowercase()) {
-            when {
-                contains("win") -> "win64-gpl-shared"
-                contains("mac") -> throw IllegalStateException("Unfortunately, macOS is not supported yet")
-                contains("nux") -> "linx64-lgpl-shared"
-                else -> throw IllegalStateException("Unsupported OS: $this")
-            }
-        }
+    private fun osString() = when {
+        OsUtils.isWindows -> "win64-gpl-shared"
+        OsUtils.isLinux -> "linx64-lgpl-shared"
+        OsUtils.isMac -> throw IllegalStateException("Unfortunately, macOS is not supported yet")
+        else -> throw IllegalStateException("Unsupported OS: $this")
     }
 }

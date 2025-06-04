@@ -1,9 +1,6 @@
 package ch.yanick.ai.ailanguagelearner.service
 
-import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
-import ch.yanick.ai.ailanguagelearner.utils.ResourceUtils
-import ch.yanick.ai.ailanguagelearner.utils.calculateSha256AsHexString
-import ch.yanick.ai.ailanguagelearner.utils.logger
+import ch.yanick.ai.ailanguagelearner.utils.*
 import org.springframework.stereotype.Component
 import java.io.File
 
@@ -35,11 +32,9 @@ class PythonService {
 
             log.info("Done creating python venv, installing required dependencies next...")
 
-            if (ProcessExecutor.executeCommand(
+            if (executeWithVenv(
                     targetFolder,
-                    "cmd",
-                    "/c",
-                    "\"Scripts\\activate.bat && pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$cudaVersion\""
+                    "pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/$cudaVersion"
                 ) != 0
             ) {
                 throw IllegalStateException("Failed to install PyTorch dependencies")
@@ -52,6 +47,23 @@ class PythonService {
             targetFolder.deleteRecursively()
             throw e
         }
+    }
+
+
+    private fun executeWithVenv(targetFolder: File, command: String) = if (OsUtils.isWindows) {
+        ProcessExecutor.executeCommand(
+            targetFolder,
+            "cmd",
+            "/c",
+            "\"Scripts\\activate.bat && $command\""
+        )
+    } else {
+        ProcessExecutor.executeCommand(
+            targetFolder,
+            "bash",
+            "-c",
+            "\"source bin/activate && $command\""
+        )
     }
 
     private fun checkAndExtractScript(folder: File) {
@@ -87,12 +99,7 @@ class PythonService {
     }
 
     private fun installDependencies(targetFolder: File, vararg dependencies: String) {
-        if (ProcessExecutor.executeCommand(
-                targetFolder,
-                "cmd",
-                "/c",
-                "\"Scripts\\activate.bat && pip install ${dependencies.joinToString(" ")}\""
-            ) != 0
+        if (executeWithVenv(targetFolder, "pip install ${dependencies.joinToString(" ")}") != 0
         ) {
             throw IllegalStateException("Failed to install dependencies")
         }
