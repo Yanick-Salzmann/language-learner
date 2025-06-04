@@ -55,13 +55,13 @@ export class AudioService {
         });
     }
 
-    getAudioState(messageId: number): Observable<'idle' | 'loading' | 'playing'> {
+    getAudioState(messageId: number): Observable<'idle' | 'loading' | 'playing' | 'other-playing'> {
         return new Observable(observer => {
             const subscription = this.audioState$.subscribe(state => {
                 if (state.messageId === messageId) {
                     observer.next(state.state);
                 } else {
-                    observer.next('idle');
+                    observer.next((state.state === 'loading' || state.state === 'playing') ? 'other-playing' : 'idle');
                 }
             });
             

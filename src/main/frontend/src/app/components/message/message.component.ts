@@ -19,16 +19,17 @@ import {Observable, Subscription} from 'rxjs';
                 </div>
                 <markdown class="message-text markdown-content"
                           *ngIf="message.sender === 'ASSISTANT'" emoji
-                          [data]="message.content.asObservable() | async"></markdown>                
-                <div class="message-actions" [class.playing]="audioState === 'playing'" *ngIf="message.sender === 'ASSISTANT'">
+                          [data]="message.content.asObservable() | async"></markdown>
+                <div class="message-actions" [class.playing]="audioState === 'playing'"
+                     *ngIf="message.sender === 'ASSISTANT'">
                     <button
                             class="speak-button"
                             [class.playing]="audioState === 'playing'"
                             [class.loading]="audioState === 'loading'"
                             (click)="speakMessage()"
-                            [disabled]="audioState === 'loading'"
+                            [disabled]="audioState === 'loading' || audioState === 'other-playing'"
                             title="Read aloud">
-                        <six-icon *ngIf="audioState === 'idle'">volume_up</six-icon>
+                        <six-icon *ngIf="audioState === 'idle' || audioState === 'other-playing'">volume_up</six-icon>
                         <six-icon *ngIf="audioState === 'loading'" class="loading-icon">hourglass_empty</six-icon>
                         <six-icon *ngIf="audioState === 'playing'" class="playing-icon">pause</six-icon>
                     </button>
@@ -48,8 +49,8 @@ import {Observable, Subscription} from 'rxjs';
 
     .message.user .message-time {
       text-align: right;
-    }    
-    
+    }
+
     .speak-button {
       border: none;
       background: transparent;
@@ -86,18 +87,24 @@ import {Observable, Subscription} from 'rxjs';
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
     }
     `]
 })
 export class MessageComponent implements OnInit, OnDestroy {
     @Input() message!: StreamedChatMessage;
-    audioState: 'idle' | 'loading' | 'playing' = 'idle';
+    audioState: 'idle' | 'loading' | 'playing' | 'other-playing' = 'idle';
     private audioStateSubscription?: Subscription;
 
     constructor(private audioService: AudioService) {
-    }    ngOnInit(): void {
+    }
+
+    ngOnInit(): void {
         // Subscribe to audio state changes for this specific message
         this.audioStateSubscription = this.audioService.getAudioState(this.message.id).subscribe(
             state => this.audioState = state
@@ -108,7 +115,9 @@ export class MessageComponent implements OnInit, OnDestroy {
         if (this.audioStateSubscription) {
             this.audioStateSubscription.unsubscribe();
         }
-    }    speakMessage(): void {
+    }
+
+    speakMessage(): void {
         if (this.message.content && this.audioState === 'idle') {
             const language = this.message.language || 'en';
             this.audioService.generateAndPlaySpeech(this.message.id, this.message.sessionId, language);
