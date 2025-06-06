@@ -34,14 +34,25 @@ class LanguageLearningService(
     private val memoryMap = mutableMapOf<String, ChatMemory>()
 
     fun createChatSession(): ChatSession {
-        val session = ChatSession(
+        var session = ChatSession(
             id = UUID.randomUUID().toString(),
             title = "New conversation",
             language = "",
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
-        return chatSessionRepository.save(session)
+        session = chatSessionRepository.save(session)
+
+        val rootMessage = ChatMessage(
+            sessionId = session.id,
+            sender = MessageSender.ASSISTANT,
+            content = "Welcome to your language learning session! Please select a language to start.",
+            language = "",
+            timestamp = LocalDateTime.now()
+        )
+
+        chatMessageRepository.save(rootMessage)
+        return session
     }
 
     fun getAllChatSessions(): List<ChatSession> {
