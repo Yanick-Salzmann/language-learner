@@ -2,8 +2,6 @@ package ch.yanick.ai.ailanguagelearner.service
 
 import ch.yanick.ai.ailanguagelearner.config.AiConfiguration
 import ch.yanick.ai.ailanguagelearner.utils.ProcessExecutor
-import ch.yanick.ai.ailanguagelearner.utils.ResourceUtils
-import ch.yanick.ai.ailanguagelearner.utils.calculateSha256AsHexString
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
@@ -24,7 +22,8 @@ import kotlin.concurrent.withLock
 class TextToSpeechService(
     private val ttsConfiguration: AiConfiguration.TtsConfig,
     private val pythonService: PythonService,
-    private val ffmpegService: FfmpegService
+    private val ffmpegService: FfmpegService,
+    private val xttsService: XttsService
 ) {
     private val log = LoggerFactory.getLogger(TextToSpeechService::class.java)
 
@@ -59,7 +58,7 @@ class TextToSpeechService(
         val targetFolder = this.setupVenv(cudaVersion)
         workingDir = targetFolder
         ffmpegService.downloadFfmpeg(targetFolder)
-        this.setupXttsModel(targetFolder)
+        xttsService.setupXttsModel(targetFolder)
         this.startXttsServerThread()
         this.startPythonThread(targetFolder)
     }
@@ -83,6 +82,8 @@ class TextToSpeechService(
     }
 
     fun generateSpeech(text: String, language: String = "en"): Flux<DataBuffer> {
+        // TODO: get rid of blocking calls
+
         // remove all emojis from text
         val sanitizedText = text.replace(Regex("[\\p{So}\\p{Cn}]+"), "")
 
@@ -206,37 +207,6 @@ class TextToSpeechService(
         dataCallback(data)
     }
 
-    private fun setupXttsModel(folder: File) {
-        val modelDir = File(folder, "XTTS-v2")
-        if (File(modelDir, "config.json").exists()) {
-            log.info("XTTS model already exists in $modelDir")
-            return
-        }
-
-        if (modelDir.exists()) {
-            log.info("XTTS model directory already exists, removing it: $modelDir")
-            modelDir.deleteRecursively()
-        }
-
-        log.info("Setting up XTTS model in $modelDir")
-        if (!modelDir.mkdirs()) {
-            throw IllegalStateException("Unable to create directory: $modelDir")
-        }
-
-        if (ProcessExecutor.executeCommand(
-                modelDir,
-                "git",
-                "clone",
-                "https://huggingface.co/coqui/XTTS-v2",
-                "."
-            ) != 0
-        ) {
-            throw IllegalStateException("Failed to clone XTTS model repository")
-        }
-
-        checkAndExtractSample(folder)
-    }
-
     private fun setupVenv(cudaVersion: String): File {
         val userFolder = File(System.getProperty("user.home"))
         if (!userFolder.exists()) {
@@ -252,26 +222,6 @@ class TextToSpeechService(
             "git+https://github.com/idiap/coqui-ai-TTS"
         )
         return targetFolder
-    }
-
-    private fun checkAndExtractSample(folder: File) {
-        val content = ResourceUtils.resourceToByteArray("/tts/generated.wav")
-        val sampleFile = File(folder, "generated.wav")
-        val hash = content.calculateSha256AsHexString()
-        val hashFile = File(folder, "generated.wav.sha256")
-
-        if (sampleFile.exists() && hashFile.exists()) {
-            val existingHash = hashFile.readText().trim()
-            if (existingHash == hash) {
-                log.info("Voice sample generated.wav is already up to date")
-                return
-            }
-        }
-
-        log.info("Extracting voice sample generated.wav to $folder")
-        sampleFile.writeBytes(content)
-        hashFile.writeText(hash)
-
     }
 
     private fun ensureCudaInstalled(requestedVersion: String): String {
