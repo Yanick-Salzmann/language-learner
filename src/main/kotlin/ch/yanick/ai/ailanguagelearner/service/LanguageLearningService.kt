@@ -33,11 +33,11 @@ class LanguageLearningService(
 
     private val memoryMap = mutableMapOf<String, ChatMemory>()
 
-    fun createChatSession(language: String): ChatSession {
+    fun createChatSession(): ChatSession {
         val session = ChatSession(
             id = UUID.randomUUID().toString(),
-            title = "New $language conversation",
-            language = language,
+            title = "New conversation",
+            language = "",
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )

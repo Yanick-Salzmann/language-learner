@@ -30,9 +30,9 @@ class LanguageLearnerController(
     private val mapper = jacksonObjectMapper()
 
     @PostMapping("/chat/sessions")
-    fun createChatSession(@RequestBody request: CreateSessionRequest): Mono<ChatSession> {
+    fun createChatSession(): Mono<ChatSession> {
         return Mono.fromCallable {
-            languageLearningService.createChatSession(request.language)
+            languageLearningService.createChatSession()
         }
     }
 
@@ -111,10 +111,6 @@ class LanguageLearnerController(
         return textToSpeechService.generateSpeech(message.content, language)
     }
 }
-
-data class CreateSessionRequest(
-    val language: String
-)
 
 data class TTSRequest(
     val text: String,
