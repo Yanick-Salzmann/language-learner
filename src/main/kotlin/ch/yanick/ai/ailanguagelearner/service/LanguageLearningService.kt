@@ -2,14 +2,15 @@ package ch.yanick.ai.ailanguagelearner.service
 
 import ch.yanick.ai.ailanguagelearner.model.ChatMessage
 import ch.yanick.ai.ailanguagelearner.model.ChatSession
+import ch.yanick.ai.ailanguagelearner.model.ChatSessionState
 import ch.yanick.ai.ailanguagelearner.model.MessageSender
 import ch.yanick.ai.ailanguagelearner.repository.ChatMessageRepository
 import ch.yanick.ai.ailanguagelearner.repository.ChatSessionRepository
-import dev.langchain4j.memory.ChatMemory
-import dev.langchain4j.memory.chat.MessageWindowChatMemory
+import ch.yanick.ai.ailanguagelearner.utils.logger
 import dev.langchain4j.model.chat.StreamingChatModel
-import dev.langchain4j.service.AiServices
 import dev.langchain4j.service.TokenStream
+import kotlin.text.append
+import kotlin.text.buildString
 import kotlinx.coroutines.runBlocking
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -25,13 +26,11 @@ data class ChatMessageChunk(
 class LanguageLearningService(
     private val chatLanguageModel: StreamingChatModel,
     private val chatMessageRepository: ChatMessageRepository,
-    private val chatSessionRepository: ChatSessionRepository
+    private val chatSessionRepository: ChatSessionRepository,
+    private val assistantService: AssistantService,
+    service: AssistantService
 ) {
-    private interface Learner {
-        fun ask(question: String): TokenStream
-    }
-
-    private val memoryMap = mutableMapOf<String, ChatMemory>()
+    private val log by logger()
 
     fun createChatSession(): ChatSession {
         var session = ChatSession(
@@ -70,8 +69,11 @@ class LanguageLearningService(
         language: String,
         onMessage: suspend (ChatMessageChunk) -> Unit
     ) {
+        val session = chatSessionRepository.findById(sessionId)
+            .orElseThrow { IllegalArgumentException("Session with ID $sessionId not found") }
+
         // Save user message
-        var userChatMessage = ChatMessage(
+        val userChatMessage = ChatMessage(
             id = messageId,
             sessionId = sessionId,
             sender = MessageSender.USER,
@@ -80,21 +82,13 @@ class LanguageLearningService(
             timestamp = LocalDateTime.now()
         )
 
-        userChatMessage = chatMessageRepository.save(userChatMessage)
+        chatMessageRepository.save(userChatMessage)
 
-        val service = AiServices.builder(Learner::class.java)
-            .streamingChatModel(chatLanguageModel)
-            .chatMemory(memoryMap.getOrPut(sessionId) { MessageWindowChatMemory.builder().maxMessages(20).build() })
-            .systemMessageProvider {
-                buildString {
-                    append("You are a helpful language teacher for $language. ")
-                    append("Your role is to help the user learn $language by correcting their mistakes, ")
-                    append("providing better alternatives, and guiding them through a structured learning path. ")
-                    append("Always respond in $language unless the user explicitly asks for an explanation in English. ")
-                    append("Be encouraging and provide constructive feedback. Have a lighthearted tone. Use some emojis, but not excessively")
-                }
-            }
-            .build()
+        if (session.state == ChatSessionState.SELECT_LANGUAGE) {
+            return handleSelectLanguage(userMessage, session, onMessage)
+        }
+
+        val service = assistantService.conversationAssistantForLanguage(language, sessionId)
 
         val userMessage = buildString {
             append("Student: $userMessage\n")
@@ -112,7 +106,15 @@ class LanguageLearningService(
         )
 
         aiChatMessage = chatMessageRepository.save(aiChatMessage)
+        processTokenStream(aiChatMessage, sessionId, aiResponse, onMessage)
+    }
 
+    private fun processTokenStream(
+        aiChatMessage: ChatMessage,
+        sessionId: String,
+        aiResponse: TokenStream,
+        onMessage: suspend (ChatMessageChunk) -> Unit
+    ) {
         aiResponse.onPartialResponse {
             runBlocking {
                 onMessage(
@@ -149,5 +151,66 @@ class LanguageLearningService(
                 )
             }
         }.start()
+    }
+
+    private suspend fun handleSelectLanguage(
+        message: String,
+        session: ChatSession,
+        onMessage: suspend (ChatMessageChunk) -> Unit
+    ) {
+        val aiChatMessage = chatMessageRepository.save(
+            ChatMessage(
+                sessionId = session.id,
+                sender = MessageSender.ASSISTANT,
+                content = "",
+                language = "",
+                timestamp = LocalDateTime.now()
+            )
+        )
+
+        val language = assistantService.languageDetectionAssistant.detectLanguage(message).lowercase().trim()
+        log.info("Determined language: $language for message: $message")
+
+        val isValidLanguage = Locale.getISOLanguages().any { it.equals(language, ignoreCase = true) }
+        if (!isValidLanguage) {
+            val errorMsg = "Invalid language selected. Please try again."
+            respondWithSingleMessage(errorMsg, aiChatMessage, onMessage)
+        } else {
+            chatSessionRepository.save(
+                session.copy(
+                    language = language,
+                    state = ChatSessionState.SELECT_TOPIC,
+                    updatedAt = LocalDateTime.now()
+                )
+            )
+            val languageName = Locale.forLanguageTag(language).run { getDisplayLanguage(this) }
+            val welcomeMsg =
+                "You have selected $languageName. Let's start learning! What topic would you like to focus on? We can do general conversion, vocabulary building, or grammar exercises."
+            respondWithSingleMessage(welcomeMsg, aiChatMessage, onMessage)
+        }
+    }
+
+    private fun respondWithSingleMessage(
+        message: String,
+        aiChatMessage: ChatMessage,
+        onMessage: suspend (ChatMessageChunk) -> Unit
+    ) {
+        chatMessageRepository.save(aiChatMessage.copy(content = message))
+        runBlocking {
+            onMessage(
+                ChatMessageChunk(
+                    id = aiChatMessage.id,
+                    isEnd = false,
+                    content = message
+                )
+            )
+            onMessage(
+                ChatMessageChunk(
+                    id = aiChatMessage.id,
+                    isEnd = true,
+                    content = ""
+                )
+            )
+        }
     }
 }

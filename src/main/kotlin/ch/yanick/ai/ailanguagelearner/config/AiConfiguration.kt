@@ -1,7 +1,10 @@
 package ch.yanick.ai.ailanguagelearner.config
 
+import dev.langchain4j.model.chat.ChatModel
 import dev.langchain4j.model.chat.StreamingChatModel
+import dev.langchain4j.model.ollama.OllamaChatModel
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel
+import dev.langchain4j.model.openai.OpenAiChatModel
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -23,13 +26,13 @@ data class AiConfiguration(
         var apiKey: String = "",
         var model: String = "gpt-3.5-turbo"
     )
-    
+
     data class AzureConfig(
         var apiKey: String = "",
         var endpoint: String = "",
         var deploymentName: String = ""
     )
-    
+
     data class OllamaConfig(
         var baseUrl: String = "http://localhost:11434",
         var model: String = "llama2"
@@ -38,7 +41,7 @@ data class AiConfiguration(
     data class TtsConfig(
         var cudaVersion: String = ""
     )
-    
+
     @Bean
     @Primary
     fun chatLanguageModel(): StreamingChatModel {
@@ -48,13 +51,35 @@ data class AiConfiguration(
                 .modelName(openai.model)
                 .timeout(Duration.ofMillis(timeout))
                 .build()
-                
+
             "ollama" -> OllamaStreamingChatModel.builder()
                 .baseUrl(ollama.baseUrl)
                 .modelName(ollama.model)
                 .timeout(Duration.ofMillis(timeout))
                 .build()
-                
+
+            else -> throw IllegalArgumentException("Unsupported AI provider: $provider")
+        }
+    }
+
+    @Bean
+    @Primary
+    fun blockingChatModel(): ChatModel {
+        return when (provider.lowercase()) {
+            "openai" -> OpenAiChatModel.builder()
+                .apiKey(openai.apiKey)
+                .logRequests(true)
+                .logResponses(true)
+                .modelName(openai.model)
+                .timeout(Duration.ofMillis(timeout))
+                .build()
+
+            "ollama" -> OllamaChatModel.builder()
+                .baseUrl(ollama.baseUrl)
+                .modelName(ollama.model)
+                .timeout(Duration.ofMillis(timeout))
+                .build()
+
             else -> throw IllegalArgumentException("Unsupported AI provider: $provider")
         }
     }
