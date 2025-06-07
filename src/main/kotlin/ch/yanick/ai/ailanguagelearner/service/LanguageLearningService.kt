@@ -3,6 +3,7 @@ package ch.yanick.ai.ailanguagelearner.service
 import ch.yanick.ai.ailanguagelearner.model.ChatMessage
 import ch.yanick.ai.ailanguagelearner.model.ChatSession
 import ch.yanick.ai.ailanguagelearner.model.ChatSessionState
+import ch.yanick.ai.ailanguagelearner.model.ChatSessionType
 import ch.yanick.ai.ailanguagelearner.model.MessageSender
 import ch.yanick.ai.ailanguagelearner.repository.ChatMessageRepository
 import ch.yanick.ai.ailanguagelearner.repository.ChatSessionRepository
@@ -86,6 +87,10 @@ class LanguageLearningService(
 
         if (session.state == ChatSessionState.SELECT_LANGUAGE) {
             return handleSelectLanguage(userMessage, session, onMessage)
+        } else if (session.state == ChatSessionState.SELECT_TOPIC) {
+            return handleSelectType(userMessage, session, onMessage)
+        } else if (session.state != ChatSessionState.CONVERSION_IN_PROGRESS) {
+            throw IllegalStateException("Invalid session state: ${session.state}")
         }
 
         val service = assistantService.conversationAssistantForLanguage(language, sessionId)
@@ -187,6 +192,53 @@ class LanguageLearningService(
             val welcomeMsg =
                 "You have selected $languageName. Let's start learning! What topic would you like to focus on? We can do general conversion, vocabulary building, or grammar exercises."
             respondWithSingleMessage(welcomeMsg, aiChatMessage, onMessage)
+        }
+    }
+
+    private fun handleSelectType(
+        message: String,
+        session: ChatSession,
+        onMessage: suspend (ChatMessageChunk) -> Unit
+    ) {
+        val aiChatMessage = chatMessageRepository.save(
+            ChatMessage(
+                sessionId = session.id,
+                sender = MessageSender.ASSISTANT,
+                content = "",
+                language = session.language,
+                timestamp = LocalDateTime.now()
+            )
+        )
+
+        val type = assistantService.topicDetectionAssistant.detectTopic(message).uppercase().trim()
+        log.info("Determined type: $type for message: $message")
+
+        val validTypes = setOf("VOCABULARY", "GRAMMAR", "CONVERSATION", "UNKNOWN")
+        if (type !in validTypes || type == "UNKNOWN") {
+            val errorMsg = "Invalid topic selected. Please try again."
+            respondWithSingleMessage(errorMsg, aiChatMessage, onMessage)
+        } else {
+            val chatSessionType = ChatSessionType.valueOf(type)
+            val displayName = mapChatSessionTypeToDisplayName(chatSessionType)
+            chatSessionRepository.save(
+                session.copy(
+                    type = chatSessionType,
+                    state = ChatSessionState.CONVERSION_IN_PROGRESS,
+                    updatedAt = LocalDateTime.now()
+                )
+            )
+            val welcomeMsg =
+                "You have selected $displayName. Let's start learning! Let me know when you are ready to begin!"
+            respondWithSingleMessage(welcomeMsg, aiChatMessage, onMessage)
+        }
+    }
+
+    private fun mapChatSessionTypeToDisplayName(type: ChatSessionType): String {
+        return when (type) {
+            ChatSessionType.VOCABULARY -> "vocabulary building"
+            ChatSessionType.GRAMMAR -> "grammar exercises"
+            ChatSessionType.CONVERSATION -> "conversational practice"
+            else -> "unknown topic"
         }
     }
 

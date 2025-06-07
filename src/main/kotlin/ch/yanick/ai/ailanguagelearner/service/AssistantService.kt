@@ -19,12 +19,46 @@ interface LanguageDetectionAssistant {
     fun detectLanguage(text: String): String
 }
 
+interface TopicDetectionAssistant {
+    @UserMessage("Detect the topic of {{text}}.\n\nTopic: ")
+    fun detectTopic(text: String): String
+}
+
 @Component
 class AssistantService(
     private val chatLanguageModel: StreamingChatModel,
     private val blockingChatModel: ChatModel
 ) {
     private val memoryMap = mutableMapOf<String, ChatMemory>()
+
+    val topicDetectionAssistant: TopicDetectionAssistant =
+        AiServices.builder(TopicDetectionAssistant::class.java)
+            .chatModel(blockingChatModel)
+            .systemMessageProvider {
+                """
+                    You are a language learning intent classifier. Your task is to analyze user responses about what type of language learning they want to do and classify their intent.
+                    
+                    You must respond with EXACTLY ONE of these four values and nothing else:
+                    
+                    - VOCABULARY: User wants vocabulary training, word learning, expanding word knowledge, learning new words, or building vocabulary
+                    - GRAMMAR: User wants to improve grammar, spelling, sentence structure, language rules, or writing mechanics
+                    - CONVERSATION: User wants to practice speaking, improve conversational skills, chat practice, dialogue practice, or general communication skills
+                    - UNKNOWN: Intent is unclear, ambiguous, or doesn't fit the other categories
+                    
+                    Rules:
+                    1. Respond with only the classification value (VOCABULARY, GRAMMAR, CONVERSATION, or UNKNOWN)
+                    2. Do not include any explanation, punctuation, or additional text
+                    3. If multiple intents are mentioned, choose the most prominent one
+                    4. If no clear intent can be determined, respond with UNKNOWN
+                    
+                    Examples:
+                    - "I want to learn new words" → VOCABULARY
+                    - "Help me with my grammar" → GRAMMAR  
+                    - "I need practice talking" → CONVERSATION
+                    - "Just help me learn" → UNKNOWN
+                """.trimIndent()
+            }
+            .build()
 
     val languageDetectionAssistant: LanguageDetectionAssistant =
         AiServices.builder(LanguageDetectionAssistant::class.java)

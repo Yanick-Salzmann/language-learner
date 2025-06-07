@@ -10,6 +10,13 @@ enum class ChatSessionState {
     CONVERSION_IN_PROGRESS,
 }
 
+enum class ChatSessionType {
+    VOCABULARY,
+    GRAMMAR,
+    CONVERSATION,
+    UNKNOWN
+}
+
 @Entity
 @Table(name = "chat_sessions")
 data class ChatSession(
@@ -30,5 +37,9 @@ data class ChatSession(
 
     @Column(name = "state", nullable = false)
     @Enumerated(EnumType.STRING)
-    val state: ChatSessionState = ChatSessionState.SELECT_LANGUAGE
+    val state: ChatSessionState = ChatSessionState.SELECT_LANGUAGE,
+
+    @Column(name = "type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    val type: ChatSessionType = ChatSessionType.UNKNOWN
 )
